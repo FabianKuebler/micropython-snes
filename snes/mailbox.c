@@ -21,6 +21,15 @@ void mb_puts(const char *s)
   }
 }
 
+void mb_puthex32(uint32_t v)
+{
+  static const char digits[] = "0123456789abcdef";
+  int i;
+  for (i = 28; i >= 0; i -= 4) {
+    mb_putc(digits[(v >> i) & 0xf]);
+  }
+}
+
 void mb_finish(uint16_t status)
 {
   MB_STATUS = status;

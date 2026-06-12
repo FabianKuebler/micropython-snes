@@ -21,6 +21,7 @@
 void mb_init(void);
 void mb_putc(char c);
 void mb_puts(const char *s); // writes the string, no newline added
+void mb_puthex32(uint32_t v); // 8 hex digits, no prefix
 void mb_finish(uint16_t status); // sets status and spins forever
 
 #endif

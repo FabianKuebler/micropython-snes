@@ -71,6 +71,57 @@ timeout → Lua exits 99, ROM never boots → 98, ring overflow → 97.
 Caveat: exit code 1 is also a generic "Mesen crashed" code, so pytest
 asserts the captured ring-buffer text as well, never the exit code alone.
 
+## 2026-06-12 — M1 findings (compiler trust-but-verify)
+
+First run of the self-test ROM produced 8 failures; triage found two genuine
+Calypsi 5.17 bugs, one documented-behavior misunderstanding, and one
+arithmetic error in our own expected value (u64.shl — the compiler was
+right). All verified in the emulator, all worked around; `pytest -k selftest`
+is green (41 checks). Consider reporting the two bugs upstream (hth313).
+
+### Far pointers do not cross banks (documented, not a bug)
+
+Manual §5.3.3: far objects are limited to 64K-1 and pointer arithmetic does
+not carry into the bank byte; `__huge` would, but is disabled in the large
+data model (enabling it requires rebuilding the C library with 32-bit
+size_t). Consequences for the port:
+
+- **The GC heap must live inside a single 64K bank** — plan: bank $7F
+  ($7F0000-$7FFFFF), which comfortably fits the planned 48-64 KB heap.
+- No C object, ever, may straddle $7E/$7F. Linker sections won't create such
+  an object on their own (far section placement respects this), but
+  fixed-address tricks must respect it manually.
+
+### Calypsi bug 1: variadic 16-bit last named parameter clobbered
+
+In a variadic function whose last named parameter is 16-bit (passed in the
+accumulator), the va_start/frame-setup codegen executes `tsc` before the
+parameter is saved, destroying it (all -O levels with a frame; repro:
+`bugs/calypsi-varargs-int-param-clobber.c`, compare `vsum_int` vs
+`vsum_copy`). Pointer and 32-bit last parameters are passed in pseudo
+registers and are safe — which covers MicroPython's dominant
+`(..., const char *fmt, ...)` shape. Workaround where a 16-bit count is
+wanted: `int count = n;` before `va_start` (forces a register save).
+Emulator-verified by va.long/va.longlong (workaround) and va.fmt (safe
+pointer shape).
+
+### Calypsi bug 2: volatile stores to stack locals dropped
+
+In a multi-branch setjmp function shaped like our setjmp test, assignments
+to a `volatile` *stack* local between `setjmp` and `longjmp` are silently
+not emitted — at -O0, -O1 and -O2 (repro:
+`bugs/calypsi-volatile-auto-store-dropped.c`: `m = 1` compiles to `lda ##1`
+with no store; simpler functions like `sj2`-style single-branch are
+correct). Volatile statics/globals are always correct. Consequences:
+
+- Our code: never rely on volatile autos to survive longjmp; use static
+  volatile (done in m1_selftest).
+- MicroPython (M2/M3): NLR call sites that keep state in volatile locals
+  across `nlr_push` must be audited; the bug is shape-dependent, so each
+  nlr-using function we actually execute gets verified behavior-level by
+  the M3/M4 tests anyway. setjmp/longjmp control flow itself (including
+  longjmp across 3 intermediate frames, distinct return values) is correct.
+
 ## 2026-06-12 — M0 green
 
 `pytest tests/ -k hello` passes: Calypsi-built HiROM image boots in Mesen

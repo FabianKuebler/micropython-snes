@@ -13,9 +13,10 @@ BUILD := build
 
 SNES_OBJS := $(BUILD)/header.o $(BUILD)/mailbox.o
 
-.PHONY: all clean hello
-all: hello
+.PHONY: all clean hello selftest
+all: hello selftest
 hello: $(BUILD)/hello.sfc
+selftest: $(BUILD)/selftest.sfc
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -29,8 +30,14 @@ $(BUILD)/%.o: snes/%.c snes/mailbox.h | $(BUILD)
 $(BUILD)/hello_main.o: m0_hello/main.c snes/mailbox.h | $(BUILD)
 	$(CC) -o $@ $< $(CFLAGS)
 
+$(BUILD)/selftest_main.o: m1_selftest/main.c snes/mailbox.h | $(BUILD)
+	$(CC) -o $@ $< $(CFLAGS)
+
 $(BUILD)/hello.raw: $(SNES_OBJS) $(BUILD)/hello_main.o
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/hello.map $^
+
+$(BUILD)/selftest.raw: $(SNES_OBJS) $(BUILD)/selftest_main.o
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/selftest.map $^
 
 $(BUILD)/%.sfc: $(BUILD)/%.raw tools/raw2sfc.py
 	python3 tools/raw2sfc.py $< $@
