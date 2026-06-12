@@ -1,0 +1,64 @@
+-- Generic mailbox harness: drains the stdout ring at $7E0110 into @LOGFILE@
+-- every frame and exits with the ROM's status word once it goes nonzero.
+-- Exit codes: status word (1 = pass, 0xDEAD = panic, ...), or
+--   99 = still running after @MAXFRAMES@ frames
+--   98 = magic never appeared (ROM did not boot)
+--   97 = ring overflow (ROM wrote >3824 bytes between two frames)
+
+local MB_MAGIC, MB_STATUS, MB_WINDEX, MB_RING = 0x100, 0x102, 0x104, 0x110
+local RING_SIZE = 3824
+
+local frames = 0
+local sawMagic = false
+local readIndex = 0
+local logf = io.open("@LOGFILE@", "wb")
+
+local function word(addr)
+  return emu.readWord(addr, emu.memType.snesWorkRam, false)
+end
+
+local function drain()
+  local wi = word(MB_WINDEX)
+  local pending = (wi - readIndex) % 65536
+  if pending > RING_SIZE then
+    logf:close()
+    emu.stop(97)
+    return
+  end
+  while readIndex ~= wi do
+    local b = emu.read(MB_RING + (readIndex % RING_SIZE), emu.memType.snesWorkRam)
+    logf:write(string.char(b))
+    readIndex = (readIndex + 1) % 65536
+  end
+  logf:flush()
+end
+
+local function onFrame()
+  frames = frames + 1
+  if not sawMagic then
+    if word(MB_MAGIC) == 0xCAFE then
+      sawMagic = true
+    elseif frames > 600 then
+      logf:close()
+      emu.stop(98)
+      return
+    else
+      return
+    end
+  end
+
+  drain()
+  local status = word(MB_STATUS)
+  if status ~= 0 then
+    drain()
+    logf:close()
+    emu.stop(status)
+    return
+  end
+  if frames >= @MAXFRAMES@ then
+    logf:close()
+    emu.stop(99)
+  end
+end
+
+emu.addEventCallback(onFrame, emu.eventType.endFrame)
