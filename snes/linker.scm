@@ -8,14 +8,18 @@
             (address (#x0 . #xff))
             (type RAM)
             (section registers ztiny tiny))
-    ;; $0100-$0FFF intentionally unused: mailbox.
+    ;; nearly all of bank-0 RAM is C stack: mp_init alone needs ~6KB
+    ;; (measured; Calypsi frames save 32-bit pseudo registers)
     (memory LoRAM
-            (address (#x1000 . #x1fff))
+            (address (#x100 . #x1fff))
             (type RAM)
             (qualifier near)
             (section stack data znear near))
+    ;; far data stays in bank $7E; all of bank $7F is the MicroPython GC heap
+    ;; (fixed addresses in port/main.c, no linker object — far objects must
+    ;; not cross the bank boundary)
     (memory HiRAM
-            (address (#x7e2000 . #x7fffff))
+            (address (#x7e2000 . #x7effff))
             (type RAM)
             (qualifier far)
             (section heap zfar far huge))
@@ -64,7 +68,7 @@
             (qualifier far)
             (section farcode cdata cnear cfar chuge switch ifar ihuge))
 
-    (block stack (size #x800))
+    (block stack (size #x1d00))
     (base-address _DirectPageStart DirectPage 0)
     (base-address _NearBaseAddress LoRAM 0)
     ))

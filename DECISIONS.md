@@ -71,6 +71,67 @@ timeout → Lua exits 99, ROM never boots → 98, ring overflow → 97.
 Caveat: exit code 1 is also a generic "Mesen crashed" code, so pytest
 asserts the captured ring-buffer text as well, never the exit code alone.
 
+## 2026-06-12 — M2: MicroPython core compiles, links, and mp_init runs
+
+MicroPython is vendored as a git submodule pinned to **v1.28.0**; the port
+lives in `port/` in this repo (thin-repo option from the plan) so the
+submodule stays pristine except for tiny patches in `patches/`, applied
+idempotently by `make patch-micropython`.
+
+Port configuration (port/mpconfigport.h), the load-bearing choices:
+
+- **`MICROPY_OBJ_REPR_B` + `MICROPY_OBJ_BASE_ALIGNMENT aligned(2)`**:
+  Calypsi imposes NO data alignment (manual §11.7), which breaks tagged
+  mp_obj_t pointers. Repr B only needs bit 0 clear; the aligned(2) on
+  mp_obj_base_t forces evenness of every object struct. Precedent:
+  ports/pic16bit hit the identical problem with xc16 ("doesn't seem to
+  respect alignment (!!)") and chose repr B.
+- mp_int_t = intptr_t = 32-bit (mpconfig.h default — Calypsi intptr_t is 4
+  bytes even though int is 2). size_t is 16-bit; fine, no object exceeds 64K.
+- `typedef int32_t ssize_t` in mpconfigport.h: Calypsi has no POSIX ssize_t.
+- `MP_LIKELY/MP_UNLIKELY` overridden to plain (x): no __builtin_expect.
+- NDEBUG defined; `__attribute__((noreturn))` is unknown to Calypsi (warns,
+  harmless).
+- Minimal ROM level, compiler off, NLR setjmp, no float, no longint.
+
+### Calypsi bug 3: ICE "internal error: unable to label"
+
+Eight py/ files ICE'd at every -O level. Delta-debugging landed on
+MP_STATIC_ASSERT_NONCONSTEXPR — `sizeof(char[1 - 2 * !(&a != &b)])` with
+extern-address comparisons. A couple per function are fine; the ~8 that
+mp_obj_is_type expands into one expression tree ICE the code generator.
+Patch `patches/0001-calypsi-no-nonconstexpr-static-assert.patch` adds
+`|| defined(__CALYPSI__)` to the existing MSVC/C++ opt-out in py/misc.h
+(1 line; the macro is a compile-time-only sanity check, losing it costs
+nothing at runtime). Bisect false-starts worth remembering: an invalid
+flag makes cc65816 print usage and exit — which greps as "no internal
+error" — and prefix-truncation bisects converge on function boundaries,
+not the true trigger, because syntax errors mask the ICE.
+
+### qstr pipeline
+
+As planned: host `gcc -E` does all preprocessing for makeqstrdefs.py /
+makeqstrdata.py / makemoduledefs.py / make_root_pointers.py (type sizes are
+irrelevant for identifier extraction); only real compiles use cc65816.
+Worked unchanged on the first try.
+
+### Stack: mp_init needs ~6KB (!)
+
+First boot wrote "mp_init ok / M2 done" into the ring and then the harness
+reported "ROM never booted": the C stack (2KB, top $17FF) had plunged ~5.9KB
+deep during mp_init — straight through the old mailbox at $7E0100, zeroing
+the magic word. Measured low-water mark via Lua sentinel paint: $0102.
+Calypsi frames push 32-bit pseudo-registers, so C stacks here are fat.
+Consequences:
+- Mailbox moved to the top of bank $7F ($7FE000 header, $7FE010 ring of
+  8176 bytes); bank-0 $0100-$1FFF (7.25KB) is now all C stack.
+- GC heap: $7F0000-$7FDFFF (56KB), within the planned 48-64KB.
+- mp_cstack_init_with_top gets the true stack size so Python-level depth
+  checks trip before hardware overflow.
+
+Tree-shaking note: the M2 ROM (67KB raw) only pulls in what mp_init
+references; the full VM lands with M3's frozen code.
+
 ## 2026-06-12 — M1 findings (compiler trust-but-verify)
 
 First run of the self-test ROM produced 8 failures; triage found two genuine

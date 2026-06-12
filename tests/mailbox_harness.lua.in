@@ -1,12 +1,13 @@
--- Generic mailbox harness: drains the stdout ring at $7E0110 into @LOGFILE@
+-- Generic mailbox harness: drains the stdout ring at $7FE010 into @LOGFILE@
 -- every frame and exits with the ROM's status word once it goes nonzero.
 -- Exit codes: status word (1 = pass, 0xDEAD = panic, ...), or
 --   99 = still running after @MAXFRAMES@ frames
 --   98 = magic never appeared (ROM did not boot)
---   97 = ring overflow (ROM wrote >3824 bytes between two frames)
+--   97 = ring overflow (ROM wrote >8176 bytes between two frames)
 
-local MB_MAGIC, MB_STATUS, MB_WINDEX, MB_RING = 0x100, 0x102, 0x104, 0x110
-local RING_SIZE = 3824
+-- mailbox lives at $7FE000; snesWorkRam offsets are relative to $7E0000
+local MB_MAGIC, MB_STATUS, MB_WINDEX, MB_RING = 0x1E000, 0x1E002, 0x1E004, 0x1E010
+local RING_SIZE = 8176
 
 local frames = 0
 local sawMagic = false
