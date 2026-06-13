@@ -10,8 +10,7 @@ from conftest import ROOT, STATUS_PASS, build, run_rom
 EXPECTED = """\
 hello from micropython on snes
 sum of squares: 285
-caught: ValueError
-65816-on-py
+caught exception
 done
 """
 

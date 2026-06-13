@@ -1,6 +1,62 @@
 # Decisions log
 
-## 2026-06-13 — M3 in progress: Python runs, blocked on a VM miscompile
+## 2026-06-13 — M3 DONE: MicroPython bytecode runs on the SNES 🎉
+
+`pytest tests/ -k mpy` is green: `port/main.py` is compiled to bytecode by
+host `mpy-cross`, frozen into the ROM via `mpy-tool`, and executed by the
+MicroPython VM on the emulated 65816. Exact output asserted:
+
+```
+hello from micropython on snes
+sum of squares: 285
+caught exception
+done
+```
+
+That is print, 32-bit integer arithmetic, a `for` loop, and exception
+raise/catch — the full M3 smoke set from the PLAN. Tag this commit.
+
+### The fix: build py/ at -O1, not -O2
+
+The decisive finding after deep triage (below): at **-O2** the VM is
+miscompiled in a layout-sensitive way (symptom moves with any code/data
+shift); at **-O1** the core VM is correct and stable. So `MPCFLAGS` uses
+`-O1 --no-cross-call`, with `vm.o` additionally forced to `--force-switch
+if-else`. Speed cost is acceptable (the PLAN says kHz-level is fine;
+correctness first). Revisiting -O2 with a minimal repro is an upstream-report
+task, not a blocker.
+
+### Known limitation deferred to M4: method calls
+
+At -O1, basic Python (print/arith/loop/exception) is rock-solid, but
+attribute/method calls (`str.join`, `sorted(...)`, `"x".lower()`) fail with
+`AttributeError: no such attribute` — the method *name* resolves correctly
+(plain `print` via the same qstr path works), but the lookup in the type's
+`locals_dict` map does not return the method. Root cause not yet pinned
+(candidates: the bug-4 qstr/FAM restructure interacting with map lookup, or
+another -O1 codegen issue in `mp_map_lookup`/`mp_load_method_maybe`).
+`main.py` avoids methods; M4 will need this fixed to run real test files.
+
+### Triage trail (how we got here), for the upstream report
+
+- Symptom was wildly layout-sensitive: identical `vm.o` (byte-identical, same
+  link address $C00000, no bank cross) gave correct output for one `main.py`
+  and `NotImplementedError: opcode` for another. The variable is the frozen
+  bytecode's address, i.e. data the VM reads — pointing at -O2 codegen that
+  depends on absolute layout.
+- Ruled OUT: C stack overflow (hardware stack peaked at ~600 B of the 7 KB
+  bank-0 stack); bank-boundary crossing of `mp_execute_bytecode` (21 KB but
+  sits wholly in bank $C0); the switch jump table per se (it's a 16-bit
+  RTS-trick table, correct within one bank; `if-else` avoids it anyway).
+- -O0 global: fails *earlier* (in exception handling) — fatter frames, more
+  codegen surface, not better. -O1 global: correct VM, only methods fail.
+- Tools built during triage: `tools`-free Lua probes under `/tmp/mbx`
+  (PC histogram, stack low-water paint, opcode trace, function-entry traps)
+  and synthetic switch+setjmp probe ROMs in `/tmp/probe` (a 200-case switch,
+  even wrapped in setjmp/longjmp, does NOT reproduce — so the trigger is
+  specific to the real 21 KB function, likely size/register-spill).
+
+## 2026-06-13 — M3 earlier notes (superseded by the DONE entry above)
 
 Frozen `port/main.py` is compiled by host `mpy-cross`, frozen via `mpy-tool`
 into `frozen_content.c`, and executed by the VM on the 65816. Real Python

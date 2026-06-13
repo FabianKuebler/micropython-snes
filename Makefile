@@ -53,7 +53,7 @@ PYTHON := python3
 # scripts; type sizes don't matter there, visibility of config-gated code does.
 QCPP := gcc -E
 MP_INC := -I$(PORT) -I$(MPTOP) -I$(MPBUILD)
-MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul -O2 --no-cross-call -DNDEBUG \
+MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul -O1 --no-cross-call -DNDEBUG \
            $(MP_INC) --list-file=$(@:.o=.lst)
 
 PY_SRC_NAMES := \
