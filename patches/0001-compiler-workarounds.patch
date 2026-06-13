@@ -1,38 +1,50 @@
 diff --git a/py/binary.c b/py/binary.c
-index ef2857b43..31dfcd729 100644
+index ef2857b43..3b9fcd87d 100644
 --- a/py/binary.c
 +++ b/py/binary.c
-@@ -322,6 +322,28 @@ long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const
+@@ -299,7 +299,7 @@ mp_obj_t mp_binary_get_val_array(char typecode, void *p, size_t index) {
+ // The long long type is guaranteed to hold at least 64 bits, and size is at
+ // most 8 (for q and Q), so we will always be able to parse the given data
+ // and fit it into a long long.
+-long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const byte *src) {
++mp_binary_int_t mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const byte *src) {
+     int delta;
+     if (!big_endian) {
+         delta = -1;
+@@ -308,7 +308,15 @@ long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const
+         delta = 1;
+     }
+ 
++    #if defined(__VBCC__)
++    // vbcc 65816 has no 64-bit arithmetic runtime. mp_int_t is 32-bit and
++    // small ints are <=31 bits, so accumulate in 32 bits; >4-byte fields
++    // ('q'/'Q', already excluded with LONGINT_IMPL NONE) would truncate. The
++    // 32->long long widening on return needs no helper.
++    mp_uint_t val = 0;
++    #else
+     unsigned long long val = 0;
++    #endif
+     if (is_signed && *src & 0x80) {
+         val = -1;
+     }
+@@ -322,6 +330,11 @@ long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const
  }
  
  #define is_signed(typecode) (typecode > 'Z')
-+#if defined(__VBCC__)
-+// vbcc r2 ICEs (machines/65816/machine.c:3293) converting a long long *value*
-+// to a 32-bit mp_int_t/mp_uint_t. Reinterpret the low 32 bits via a union,
-+// which equals the value whenever it fits in 32 bits — the only case these
-+// conversions are used (the value was just range-checked against MP_SMALL_INT).
-+static inline mp_uint_t mp_vbcc_ll_to_u32(long long v) {
-+    union { long long ll; mp_uint_t u; } u;
-+    u.ll = v;
-+    return u.u;
-+}
-+static inline mp_int_t mp_vbcc_ll_to_i32(long long v) {
-+    union { long long ll; mp_int_t i; } u;
-+    u.ll = v;
-+    return u.i;
-+}
-+#define MP_LL_TO_U32(v) mp_vbcc_ll_to_u32(v)
-+#define MP_LL_TO_I32(v) mp_vbcc_ll_to_i32(v)
-+#else
++// On vbcc mp_binary_int_t is mp_int_t (32-bit), so these are plain casts. On
++// other compilers the operand is a long long and these narrow it.
 +#define MP_LL_TO_U32(v) ((mp_uint_t)(v))
 +#define MP_LL_TO_I32(v) ((mp_int_t)(v))
-+#endif
 +
  mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte **ptr) {
      byte *p = *ptr;
      size_t align;
-@@ -341,9 +363,9 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte *
-     long long val = mp_binary_get_int(size, is_signed(val_type), (struct_type == '>'), p);
+@@ -338,12 +351,12 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte *
+     }
+     *ptr = p + size;
+ 
+-    long long val = mp_binary_get_int(size, is_signed(val_type), (struct_type == '>'), p);
++    mp_binary_int_t val = mp_binary_get_int(size, is_signed(val_type), (struct_type == '>'), p);
  
      if (MICROPY_PY_STRUCT_UNSAFE_TYPECODES && val_type == 'O') {
 -        return (mp_obj_t)(mp_uint_t)val;
@@ -43,36 +55,94 @@ index ef2857b43..31dfcd729 100644
          return mp_obj_new_str_from_cstr(s_val);
      #if MICROPY_PY_BUILTINS_FLOAT
      } else if (val_type == 'e') {
-@@ -363,13 +385,13 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte *
+@@ -362,17 +375,28 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte *
+         return mp_obj_new_float_from_d(fpu.f);
      #endif
      } else if (is_signed(val_type)) {
++        #if defined(__VBCC__)
++        // No 64-bit compares on vbcc; the value already fits 32 bits (>4-byte
++        // typecodes are excluded with LONGINT_IMPL NONE), so take the small-int
++        // path directly.
++        return mp_obj_new_int(MP_LL_TO_I32(val));
++        #else
          if ((long long)MP_SMALL_INT_MIN <= val && val <= (long long)MP_SMALL_INT_MAX) {
 -            return mp_obj_new_int((mp_int_t)val);
 +            return mp_obj_new_int(MP_LL_TO_I32(val));
          } else {
              return mp_obj_new_int_from_ll(val);
          }
++        #endif
      } else {
++        #if defined(__VBCC__)
++        return mp_obj_new_int_from_uint(MP_LL_TO_U32(val));
++        #else
          if ((unsigned long long)val <= (unsigned long long)MP_SMALL_INT_MAX) {
 -            return mp_obj_new_int_from_uint((mp_uint_t)val);
 +            return mp_obj_new_int_from_uint(MP_LL_TO_U32(val));
          } else {
              return mp_obj_new_int_from_ull(val);
          }
++        #endif
+     }
+ }
+ 
+diff --git a/py/binary.h b/py/binary.h
+index 5c645bcaa..3f51647ff 100644
+--- a/py/binary.h
++++ b/py/binary.h
+@@ -40,7 +40,15 @@ void mp_binary_set_val_array(char typecode, void *p, size_t index, mp_obj_t val_
+ void mp_binary_set_val_array_from_int(char typecode, void *p, size_t index, mp_int_t val);
+ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte **ptr);
+ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p_base, byte **ptr);
+-long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const byte *src);
++// Returns long long (up to 8-byte 'q'/'Q' fields). vbcc 65816 has no 64-bit
++// runtime, so there it returns mp_int_t (32-bit) — >4-byte typecodes are
++// excluded anyway with LONGINT_IMPL NONE.
++#if defined(__VBCC__)
++typedef mp_int_t mp_binary_int_t;
++#else
++typedef long long mp_binary_int_t;
++#endif
++mp_binary_int_t mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const byte *src);
+ void mp_binary_set_int(size_t val_sz, bool big_endian, byte *dest, mp_uint_t val);
+ 
+ #endif // MICROPY_INCLUDED_PY_BINARY_H
+diff --git a/py/emit.h b/py/emit.h
+index 033ac9c76..e532cd80b 100644
+--- a/py/emit.h
++++ b/py/emit.h
+@@ -191,7 +191,15 @@ static inline size_t mp_emit_common_alloc_const_child(mp_emit_common_t *emit, mp
+ }
+ 
+ static inline void mp_emit_common_get_id_for_load(scope_t *scope, qstr qst) {
++    #if !defined(__VBCC__)
++    // vbcc emits unused static inlines (clang discards them); this compiler-only
++    // helper would then pull in scope_find_or_add_id, which the bytecode-VM-only
++    // build does not link (MICROPY_ENABLE_COMPILER is 0).
+     scope_find_or_add_id(scope, qst, ID_INFO_KIND_GLOBAL_IMPLICIT);
++    #else
++    (void)scope;
++    (void)qst;
++    #endif
+ }
+ 
+ id_info_t *mp_emit_common_get_id_for_modification(scope_t *scope, qstr qst);
 diff --git a/py/misc.h b/py/misc.h
-index a9c02a4dd..9c7990f3b 100644
+index a9c02a4dd..2a0b8f921 100644
 --- a/py/misc.h
 +++ b/py/misc.h
-@@ -81,7 +81,7 @@ typedef unsigned int uint;
+@@ -81,7 +81,9 @@ typedef unsigned int uint;
  // do, others only with -Werror=vla, msvc always does.
  // The (void) is needed to avoid "left operand of comma operator has no effect [-Werror=unused-value]"
  // when using this macro on the left-hand side of a comma.
 -#if defined(_MSC_VER) || defined(__cplusplus)
-+#if defined(_MSC_VER) || defined(__cplusplus) || defined(__CALYPSI__)
++#if defined(_MSC_VER) || defined(__cplusplus) || defined(__CALYPSI__) || defined(__VBCC__)
++// vbcc, like Calypsi, mishandles the non-constexpr VLA-sizeof trick used here
++// (it is a compile-time-only sanity check, so dropping it costs nothing).
  #define MP_STATIC_ASSERT_NONCONSTEXPR(cond) ((void)1)
  #else
  #if __clang__
-@@ -114,9 +114,17 @@ typedef unsigned int uint;
+@@ -114,9 +116,17 @@ typedef unsigned int uint;
  #else
  #define m_renew(type, ptr, old_num, new_num) ((type *)(m_realloc((ptr), sizeof(type) * (new_num))))
  #define m_renew_maybe(type, ptr, old_num, new_num, allow_move) ((type *)(m_realloc_maybe((ptr), sizeof(type) * (new_num), (allow_move))))
@@ -90,6 +160,101 @@ index a9c02a4dd..9c7990f3b 100644
  #define m_del_obj(type, ptr) (m_del(type, ptr, 1))
  
  void *m_malloc(size_t num_bytes);
+@@ -415,6 +425,43 @@ static inline uint32_t mp_ctz(uint32_t x) {
+ static inline uint32_t mp_popcount(uint32_t x) {
+     return __popcnt(x);
+ }
++#elif defined(__VBCC__)
++// vbcc has no __builtin_clz/ctz/popcount; software implementations. mp_int_t
++// is 32-bit (long) here, so mp_clz_mpi resolves to mp_clzl, never mp_clzll —
++// mp_clzll stays a macro (never instantiated) to avoid 64-bit codegen, which
++// vbcc 65816 cannot do at all.
++static inline uint32_t mp_clz(uint32_t x) {
++    uint32_t n = 0;
++    if (x == 0) {
++        return 32;
++    }
++    while (!(x & 0x80000000u)) {
++        x <<= 1;
++        n++;
++    }
++    return n;
++}
++static inline uint32_t mp_clzl(unsigned long x) {
++    return mp_clz((uint32_t)x);
++}
++#define mp_clzll(x) (32u)
++static inline uint32_t mp_ctz(uint32_t x) {
++    uint32_t n = 0;
++    if (x == 0) {
++        return 0;
++    }
++    while (!(x & 1u)) {
++        x >>= 1;
++        n++;
++    }
++    return n;
++}
++static inline uint32_t mp_popcount(uint32_t x) {
++    x = x - ((x >> 1) & 0x55555555);
++    x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
++    x = (x + (x >> 4)) & 0x0F0F0F0F;
++    return (x * 0x01010101) >> 24;
++}
+ #else // _MSC_VER
+ #define mp_clz(x) __builtin_clz(x)
+ #define mp_clzl(x) __builtin_clzl(x)
+@@ -481,6 +528,20 @@ static inline bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *re
+     return __builtin_mul_overflow(x, y, res);
+ }
+ 
++#elif defined(__VBCC__)
++
++// vbcc 65816 has no 64-bit (long long) runtime — even a bare `long long`
++// multiply fails to link. mp_mul_mp_int_t_overflow is 32-bit (mp_int_t) and is
++// the only one actually used (LONGINT_IMPL is NONE). The unsigned-long-long
++// variant is stubbed to emit no 64-bit arithmetic; it is never called here.
++bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *res);
++static inline bool mp_mul_ull_overflow(unsigned long long int x, unsigned long long int y, unsigned long long int *res) {
++    (void)x;
++    (void)y;
++    *res = 0;
++    return true;
++}
++
+ #else
+ 
+ bool mp_mul_ll_overflow(long long int x, long long int y, long long int *res);
+@@ -497,6 +558,14 @@ static inline bool mp_mul_ull_overflow(unsigned long long int x, unsigned long l
+ 
+ #if __has_builtin(__builtin_saddll_overflow) || MP_GCC_HAS_BUILTIN_OVERFLOW
+ #define mp_add_ll_overflow __builtin_saddll_overflow
++#elif defined(__VBCC__)
++// Unused (LONGINT_IMPL NONE); stubbed to emit no 64-bit arithmetic (no vbcc rt).
++static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
++    (void)lhs;
++    (void)rhs;
++    *res = 0;
++    return true;
++}
+ #else
+ static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
+     bool overflow;
+@@ -517,6 +586,14 @@ static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long
+ 
+ #if __has_builtin(__builtin_ssubll_overflow) || MP_GCC_HAS_BUILTIN_OVERFLOW
+ #define mp_sub_ll_overflow __builtin_ssubll_overflow
++#elif defined(__VBCC__)
++// Unused (LONGINT_IMPL NONE); stubbed to emit no 64-bit arithmetic (no vbcc rt).
++static inline bool mp_sub_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
++    (void)lhs;
++    (void)rhs;
++    *res = 0;
++    return true;
++}
+ #else
+ static inline bool mp_sub_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
+     bool overflow;
 diff --git a/py/obj.h b/py/obj.h
 index 3c9122a69..bc103b329 100644
 --- a/py/obj.h
@@ -289,6 +454,28 @@ index 0cde6062e..150080554 100644
  } qstr_pool_t;
  
  #define QSTR_TOTAL() (MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len)
+diff --git a/py/runtime_utils.c b/py/runtime_utils.c
+index 3b0ae279a..96786c970 100644
+--- a/py/runtime_utils.c
++++ b/py/runtime_utils.c
+@@ -52,6 +52,9 @@ mp_obj_t mp_call_function_2_protected(mp_obj_t fun, mp_obj_t arg1, mp_obj_t arg2
+ }
+ 
+ #if !MICROPY_USE_GCC_MUL_OVERFLOW_INTRINSIC
++#if !defined(__VBCC__)
++// vbcc 65816 has no 64-bit runtime; this long-long variant is unused with
++// LONGINT_IMPL NONE. mp_mul_mp_int_t_overflow below is 32-bit and is kept.
+ bool mp_mul_ll_overflow(long long int x, long long int y, long long int *res) {
+     bool overflow;
+ 
+@@ -76,6 +79,7 @@ bool mp_mul_ll_overflow(long long int x, long long int y, long long int *res) {
+ 
+     return overflow;
+ }
++#endif // !__VBCC__
+ 
+ bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *res) {
+     // Check for multiply overflow; see CERT INT32-C
 diff --git a/tools/mpy-tool.py b/tools/mpy-tool.py
 index 67e2cbf15..2f2b456c2 100755
 --- a/tools/mpy-tool.py

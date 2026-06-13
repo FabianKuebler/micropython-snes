@@ -1,5 +1,99 @@
 # Decisions log
 
+## 2026-06-13 — vbcc runtime: VM runs, but is layout-sensitive like Calypsi
+
+The decisive vbcc runtime test is in. Headline: **vbcc can execute the exact
+constructs that break Calypsi M4 — recursion, list iteration, method calls, and
+(with a fixed setjmp) exception raise/catch — and it produced byte-correct
+output for all of them.** BUT this is **not robust**: like Calypsi, vbcc
+miscompiles the 21KB re-entrant `mp_execute_bytecode` in a *layout-sensitive*
+way. Some link layouts run the program perfectly; others raise a garbage
+exception (TypeError/RuntimeError/NameError/AttributeError "no such attribute",
+or a corrupted traceback) — and the symptom moves when you perturb *anything*
+(add a debug print to main.c, change STACKLEN, change the test program). This is
+the same class of bug Calypsi has, just at a different opt level. So vbcc is
+**not the clean escape we hoped**; the callee-saved-register theory did not
+deliver robustness in practice.
+
+What it took to get the VM running at all (all folded into the build; the
+Calypsi path stays green — `pytest tests/` is 3/3):
+
+### vbcc 65816 r2 gaps found and worked around
+- **No 64-bit runtime at all.** Even a bare `long long` multiply fails to link
+  (no `___muluint64`/`___addint64`/… in any lib; operands wanted in zp symbols
+  `x`/`y`/`s`). MicroPython sprinkles `long long` through misc.h (overflow + clz
+  helpers, emitted into *every* TU because vbcc keeps unused static inlines),
+  runtime_utils.c, and binary.c. Neutralised all of it `__VBCC__`-guarded:
+  software clz/ctz/popcount; the unused `mp_*_ll_overflow` helpers stubbed to
+  emit no 64-bit ops; `mp_binary_get_int` returns/accumulates in 32-bit
+  (mp_binary_int_t); the long-long compares in mp_binary_get_val skipped.
+- **`intptr_t`/`uintptr_t` are 16-bit** in vbcc's `<stdint.h>` (its own comment
+  says "FIXME: depends on memory model"). In the far model a data pointer is
+  24-bit, so `(uintptr_t)0x7FE000 == 0xE000` — the bank byte is DROPPED. That
+  silently breaks `mp_int_t`/`mp_uint_t` (== intptr_t) and every pointer<->int
+  round-trip (gc.c, obj.h MP_OBJ_TO_PTR). `(unsigned long)`/`uint32_t` casts
+  round-trip fine. Fix: patch the toolchain header to 32-bit (the config's
+  hardcoded `-I<target>/include` is searched before our `-I`, so a shim header
+  is NOT picked up — must patch in place). Automated idempotently in
+  `tools/vbcc_patch_toolchain.sh`, invoked by the vbcc Makefile.
+- **Non-conforming NDEBUG `assert`.** vbcc's assert.h expands `assert(x)` to
+  *empty* under NDEBUG instead of `((void)0)`, which turns MicroPython's
+  `(MP_STATIC_ASSERT(...), assert(...), ...)` comma chains into a double-comma
+  syntax error. Also patched by the toolchain-patch script.
+- **Broken far-model setjmp/longjmp.** libvc's setjmp.o saves/restores a soft
+  stack pointer at zp symbol `sp`, but the far model keeps the C stack in the
+  *hardware* stack (verified: prologues push with `phy`, address locals `N,s`)
+  and never maintains `sp`. So stock longjmp wedges and nlr_push corrupts
+  re-entrant calls. **Wrote a correct replacement** (`snes/vbcc_setjmp.s`) that
+  saves the hardware S + the 3-byte far return address (jmp_buf is 5 bytes).
+  Verified in isolation (setjmp returns 0, longjmp(buf,42) returns 42) and it
+  makes exceptions work on-device. Linked before -lvc so the stock object is
+  never pulled. ABI: ptr arg in A(offset)/X(bank); 2nd arg at 4,s; int ret in A.
+
+### Memory model + build (all working)
+- Far/huge model (`+snes-hi`); type sizes match Calypsi (int=2, long/void*=4,
+  size_t=2) — verified on hardware. Custom linker `snes/vbcc-snes.cmd`: STACKLEN
+  enlarged for mp_init's ~6KB C stack, WRAMSIZE shrunk so far data ends at
+  $7F0000, reserving bank $7F for the 56KB GC heap ($7F0000-$7FDFFF) + mailbox
+  ($7FE000). Near data is 0 bytes (all data far), so all of $0100-$1FFF is C
+  stack. Frozen ROM data lands mid-bank (no bank-straddle of the bytecode).
+- `Makefile.vbcc` builds all of py/ (minus the native-code emitters, which the
+  bytecode VM doesn't need and which left unresolved cross-refs) + port + a
+  vbcc-specific frozen program (`port/test_vbcc.py`) and links a full ROM.
+- **`vm.o` must be built at -O2.** At -O1 the VM miscompiles even harder; -O0
+  hits a vbcc assembler bug (`unknown mnemonic divw`). -O2 is the most-correct
+  level (the inverse of Calypsi, where -O1 was correct and -O2 broke it) — but
+  even at -O2 the layout-sensitivity remains.
+
+### Decisive evidence (both directions)
+- POSITIVE: in a working layout, `fact(5)=120`, `for v in [..]` sum `=100`,
+  `",".join([...])="a,b,c"`, `"HELLO".lower()="hello"`, and (with the fixed
+  setjmp) `try/except` all produced exact correct output. Calypsi produces NONE
+  of these in any tested layout.
+- NEGATIVE: most layouts fail with a shifting garbage exception; adding a
+  `mb_puts` to main.c (a different translation unit from vm.o!) flips pass<->fail.
+  Not root-caused on vbcc to the precision Calypsi's `_Dp[0-7]` loss was; the
+  trigger is link/stack/data layout, i.e. register-allocation/spill pressure in
+  the giant re-entrant function.
+
+### Where this leaves the project
+The blocker is now understood as compiler-agnostic: a 21KB re-entrant
+interpreter loop overwhelms *immature 65816 register allocators* (Calypsi and
+vbcc both). Options going forward:
+1. **Split `mp_execute_bytecode`** (hoist cold opcode handlers into separate
+   functions) so no allocator faces a 21KB body — helps Calypsi, vbcc, and any
+   future toolchain. Highest-leverage, compiler-agnostic.
+2. **A more mature compiler.** llvm-mos has the best allocator, but its 65816
+   support is a proof-of-concept (PR llvm-mos-sdk#415 runs a degraded 16-bit-
+   address/8-bit-data mode; maintainer won't merge until "proper 65816 support"
+   exists) and SNES banking is essentially absent. The separate llvm-C65 backend
+   is real 16-bit 65816 but research-grade. A timeboxed spike (compile vm.c, run
+   a mailbox ROM) would de-risk before committing to a third port.
+3. Report both compilers' layout-sensitivity upstream with the project as repro.
+
+The vbcc infrastructure (compile fixes, toolchain patches, correct setjmp,
+build system, memory model) is committed and reusable regardless of direction.
+
 ## 2026-06-13 — vbcc: ALL py/ files compile (103/103 subset, 132/132 whole tree)
 
 Cleared the last 6 compile holdouts. Every fix is `__VBCC__`-guarded except the

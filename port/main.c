@@ -1,5 +1,11 @@
 #include "py/bc.h"
 #include "py/cstack.h"
+#if defined(__VBCC__)
+// mp_make_function_from_proto_fun reaches Calypsi transitively; vbcc needs it
+// explicit. Guarded so the Calypsi translation unit stays byte-identical (its
+// M3 pass is layout-sensitive — any size shift can flip it).
+#include "py/emitglue.h"
+#endif
 #include "py/frozenmod.h"
 #include "py/gc.h"
 #include "py/mperrno.h"
