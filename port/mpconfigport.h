@@ -31,7 +31,11 @@
 #define MP_NORETURN
 #define MP_NOINLINE
 // vbcc's builtin offsetof can't handle nested members (a.b); use the classic
-// address-of-member-in-null form, which it does handle.
+// address-of-member-in-null form, which it does handle. Pull in <stddef.h>
+// FIRST so its include guard is set — otherwise a later system include of
+// <stddef.h> (e.g. from py/obj.h) re-defines offsetof back to the builtin and
+// clobbers this override (objgenerator.c's offsetof(t, code_state.state)).
+#include <stddef.h>
 #undef offsetof
 #define offsetof(t, m) ((size_t)((char *)&(((t *)0)->m) - (char *)0))
 // vbcc's stdio.h lacks these (used by py/stream.c)

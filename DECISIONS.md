@@ -1,5 +1,48 @@
 # Decisions log
 
+## 2026-06-13 — vbcc: ALL py/ files compile (103/103 subset, 132/132 whole tree)
+
+Cleared the last 6 compile holdouts. Every fix is `__VBCC__`-guarded except the
+obj.h variadic sentinel (benign to all compilers); Calypsi `pytest tests/` stays
+3/3 green after a clean `make mpy` rebuild. Build invocation now uses `+snes-hi`
+(far/huge model, 32-bit pointers — matches our `mp_obj_t` assumptions) rather
+than `+snes-his` (tiny). Helper: `tools/vbcc_env.sh` (`. tools/vbcc_env.sh; vbcc_cc <src> <out>`).
+
+Root causes found (each reduced to a standalone repro before fixing):
+- **vbcc rejects embedded/initialised flexible-array-member structs** (strict
+  C11 6.7.2.1p3). This is ONE root cause behind three holdouts:
+  - objnamedtuple.h embeds `mp_obj_tuple_t` (ends in `items[]`).
+  - modsys.c statically initialises `mp_rom_obj_tuple_t` FAMs (sys.version_info).
+  Fix: give `mp_obj_tuple_t`/`mp_rom_obj_tuple_t` `.items` a fixed bound
+  `MP_TUPLE_ITEMS_BOUND` (=4, covers the largest static init) under `__VBCC__`.
+  Allocation is offsetof(items)-based so the bound never changes runtime layout,
+  only sizeof of the rare static instances. (objtuple.h)
+- **objgenerator.c** was NOT a FAM problem: `mp_code_state_t.state` is `[0]`
+  (→ vbcc treats as `[1]`, non-FAM). The real bug: our `offsetof` override in
+  mpconfigport.h was being clobbered by a *later* system `#include <stddef.h>`
+  (from py/obj.h), so `offsetof(t, code_state.state)` hit vbcc's builtin, which
+  can't do nested members. Fix: `#include <stddef.h>` in mpconfigport.h BEFORE
+  the override, so the guard is set and no later include can re-define it.
+- **objcell.c**: a type with zero slots passes exactly 29 args to
+  `MP_DEFINE_CONST_OBJ_TYPE_NARGS`, leaving its `...` empty — which vbcc (and
+  strict C99) reject. Fix: append a trailing `_INV` sentinel to the dispatcher
+  so `...` is always non-empty (N stays the 29th arg). (obj.h)
+- **objtype.c**: vbcc errors ("invalid operand type") casting a *multi-term*
+  integer expression to void, e.g. `(void)(1 + n_args + 2 * n_kw)` from the
+  `m_del` macro. Minimal repro: `(void)(a + 2 * b)` ICEs, `(void)(a + b)` is
+  fine. Fix: under `__VBCC__`, `m_del`/`m_del_var` use `(void)sizeof(num)`
+  (num is a side-effect-free size expr). (misc.h)
+- **binary.c ICE** (machines/65816/machine.c:3293): vbcc r2 ICEs converting a
+  `long long` *value* to a 32-bit `mp_int_t`/`mp_uint_t` (both signed and
+  unsigned; intermediate locals and masking don't help — only union punning or
+  memcpy dodge it). Fix: `MP_LL_TO_I32`/`MP_LL_TO_U32` union-reinterpret the low
+  32 bits (== the value when it fits, which is the only case used here), applied
+  to the four conversion sites in `mp_binary_get_val`. (binary.c)
+
+All folded into `patches/0001-compiler-workarounds.patch`. Next: vbcc memory
+model + custom linker (56KB heap in WRAM, mailbox at $7FE000), standalone vbcc
+Makefile, frozen module, then the decisive recursion/iteration/methods run.
+
 ## 2026-06-13 — vbcc evaluation: promising alternative to Calypsi for M4
 
 Since the M4 blocker is a Calypsi codegen bug we can't work around (see
