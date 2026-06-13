@@ -1,5 +1,64 @@
 # Decisions log
 
+## 2026-06-13 — M4 BLOCKED: pervasive VM miscompile on non-trivial programs
+
+Starting M4 (run real `tests/basics/` files) immediately hit the wall flagged
+at the end of M3: most non-trivial Python miscompiles. Findings from a long,
+careful investigation (all on the emulator):
+
+What WORKS (stable, at -O1): `print` of constants/ints, integer arithmetic,
+`for i in range(n)` loops, `try/except`, defining and calling a simple
+function once (`def f(x): return x+1; f(5)` → 6).
+
+What FAILS (each a *different* symptom, and the symptom moves with link
+layout — instrument anything and it changes):
+- list iteration `for v in [..]:` → `NotImplementedError: opcode` (an opcode
+  reaches the VM's ENTRY_DEFAULT, i.e. dispatch read a garbage opcode byte)
+- recursion `g(n)=n+g(n-1)` → hangs (infinite loop / wedge)
+- method calls `",".join([..])`, `"x".lower()` → `AttributeError` OR
+  `NotImplementedError` OR empty-message exception, depending on layout
+
+Crucially these are NOT distinct bugs — they are one underlying
+layout-sensitive miscompilation that surfaces wherever a program exercises
+enough of the giant `mp_execute_bytecode` (21 KB) function and/or deep
+re-entrant call paths. The M3 program passes only because its particular
+bytecode happens to land on a working layout.
+
+Verified NON-causes (ruled out with evidence):
+- Method lookup itself is correct: instrumented, `mp_map_lookup` returns the
+  right element; the searched qstr id for `join` is 0x68 = 104, which is
+  exactly join's computed qstr id. So qstr resolution + map lookup are fine.
+- C stack overflow: hardware SP peaks ~600 B into the 7 KB bank-0 stack.
+- Bank crossing: `mp_execute_bytecode` is 21 KB but wholly within bank $C0;
+  `ip` is read as a 24-bit far pointer (`lda [dp]`), so bytecode reads are
+  bank-safe.
+- Heap pointer truncation alone: `print(w[1])` on a heap list WORKS.
+
+Levers TRIED that did NOT robustly fix it:
+- Optimization: -O0, -O1, -O2 global (each fails at a different point; -O1 is
+  the most correct and is what M3 ships).
+- Switch strategy on vm.o: if-else / jump-table / value-table (each
+  miscompiles differently).
+- `--no-cross-call`, `--no-interprocedural-cross-jump`, `--no-inline`
+  globally (conservative opt) — still fails.
+- vm.o at -O0 while rest at -O1 — still fails.
+- Computed-goto dispatch (`MICROPY_OPT_COMPUTED_GOTO`): Calypsi 5.17 does NOT
+  support GNU `&&label` (ICE "unexpected expr tag 83 TT_EndDeclStmt") — bug 7.
+
+Assessment: this is a hard Calypsi codegen bug (likely register
+allocation/spill or stack-slot management in very large and/or re-entrant
+functions). Resolving it needs one of:
+  (a) a minimal C reproduction + report to the Calypsi author (the PLAN notes
+      he is responsive) and a compiler fix;
+  (b) a structural workaround — split `mp_execute_bytecode` into smaller
+      functions to dodge whatever size/pressure threshold trips the bug
+      (invasive: the function is one body with cross-cutting gotos and an
+      nlr landing pad);
+  (c) bisecting vm.c / helpers to localise the exact miscompiled construct
+      into a minimal repro, which feeds (a) or (b).
+This is beyond a quick fix; M4 is paused here pending a direction decision.
+M0–M3 remain green and committed.
+
 ## 2026-06-13 — M3 DONE: MicroPython bytecode runs on the SNES 🎉
 
 `pytest tests/ -k mpy` is green: `port/main.py` is compiled to bytecode by
