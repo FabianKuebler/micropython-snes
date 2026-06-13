@@ -1,5 +1,56 @@
 # Decisions log
 
+## 2026-06-13 — M4 root cause localized; no simple workaround exists
+
+Followup to the M4-blocker entry below. Two important results:
+
+### Root cause (localized)
+
+Calypsi's calling convention (manual §"Calling convention", the line
+"Registers A, X, Y and pseudo registers _Dp[0-7] are destroyed by a function
+call. Pseudo registers _Dp[8-15] [are preserved]") means _Dp[0-7] are
+caller-saved. The VM caches hot locals (notably `ip`, the bytecode pointer)
+in these. In the very large, **re-entrant** `mp_execute_bytecode` (21 KB;
+calling a Python function re-enters it), the compiler fails to preserve such
+a caller-saved value across certain calls in some layouts — so after a call
+`ip` reads garbage and the next dispatch sees an invalid opcode
+(`NotImplementedError: opcode`) or wanders off (hang). This matches every
+observed symptom and why builtins-only code (`print`) often survives while
+Python-function calls / iteration / methods break.
+
+### A simple save/restore workaround does NOT work — it only shuffles layout
+
+Tried: `code_state->ip = ip; <call>; ip = code_state->ip;` around the CALL
+opcodes (memory round-trip to dodge the dropped register). With **clean
+builds**, this fixes some programs and BREAKS others (e.g. the 1-site variant
+fixes a two-call program but hangs the M3 program). The "fix" merely changes
+vm.o's size/layout, moving the lottery. Saving `sp` too made it strictly
+worse. Conclusion: per-call-site C-level save/restore cannot robustly defeat
+this; it's layout-sensitive codegen, not a missing save we can add.
+
+### CRITICAL METHODOLOGY NOTE for future work
+
+`make mpy` does NOT always rebuild `build/mpy/py/vm.o` after editing
+`micropython/py/vm.c` (timestamp/rule interaction), which produced
+**false-positive "fixes"** during this investigation. ALWAYS `rm -f
+build/mpy/py/vm.o build/mpy/main.mpy build/mpy/frozen_content.*` (or `make
+clean`) before re-testing a vm.c change. The emulator itself is fully
+deterministic (verified: identical ROM → identical result across runs).
+
+### Where this leaves M4
+
+No quick win. Realistic paths, in order of preference:
+1. Report to the Calypsi author (Håkan) with this characterization. A truly
+   minimal standalone repro has been elusive (a 200-case switch wrapped in
+   setjmp/longjmp does NOT reproduce), so the most useful report is likely
+   the precise symptom + "_Dp[0-7] not preserved across a re-entrant call in
+   a large function" + offer the project as a reproducer.
+2. Structurally shrink `mp_execute_bytecode` (split cold opcode handlers into
+   separate functions) so the triggering codegen doesn't occur — invasive and
+   payoff uncertain (the exact trigger threshold is unknown).
+3. Hold at M3 (done) and revisit when (1) lands.
+M0–M3 remain green and committed; repo is at the clean M3 state.
+
 ## 2026-06-13 — M4 BLOCKED: pervasive VM miscompile on non-trivial programs
 
 Starting M4 (run real `tests/basics/` files) immediately hit the wall flagged
