@@ -1,5 +1,43 @@
 # Decisions log
 
+## 2026-06-13 — Spikes: splitting the VM and tuning vbcc -O do NOT fix it
+
+Two cheap experiments to see if the vbcc VM layout-sensitivity is curable
+without switching compilers. Both NEGATIVE. (Emulator ruled out as the cause:
+Mesen runs Calypsi M0-M3 and some vbcc layouts correctly, failures are
+deterministic and coherent — the VM cleanly raising real exceptions after
+reading one wrong byte. vbcc's bytecode reads ARE 24-bit far `lda [dp]` — not a
+bank-loss bug. A definitive cross-check on vbcc's 65816-sim was offered but not
+run.)
+
+1. **Split / shrink `mp_execute_bytecode`.** Stubbed cold opcodes to shrink the
+   function ~21% then ~39% (33KB -> 20KB code). Shrinking MOVES the symptom
+   (AttributeError -> TypeError as size changed) — so the function size IS the
+   lever — but does NOT fix it: even at 39% it still failed, still
+   layout-sensitively, and the FULL-size function actually passed M3 in one
+   lucky layout. So smaller is not reliably better; shrinking just relocates the
+   lottery (exactly what Calypsi's save/restore did). A full extraction (2-4
+   sessions) would very likely give the same "fixes some, breaks others".
+2. **vbcc -O bitmask sweep.** -O is a bitfield (bit0=regalloc, bit5=global opts,
+   bit8=place-vars-at-same-address, etc.). Tried 1023/767/1022/1021/895/1019/511
+   on vm.o; all failed both test layouts. Disabling register allocation (bit0)
+   and same-address placement (bit8) did NOT help.
+3. **Robustness harness.** Swept the -O2 baseline across 7 marker layouts:
+   **0/7 pass**. The one earlier-passing layout no longer passes even with
+   identical markers — because passing depends on the alignment of the ENTIRE
+   link (all ~100 objects); rebuilding anything shifts it. So vbcc "working" is a
+   needle-in-haystack alignment, not a usable state.
+
+Conclusion: vbcc cannot robustly compile this VM, same as Calypsi — a real
+register-allocation/spill bug in both compilers triggered by the 21KB re-entrant
+interpreter loop. No source split or compiler flag found that makes it
+deterministically correct. Realistic paths: (a) report to the vbcc author
+(Volker Barthelmann is responsive) and/or the Calypsi author with the project as
+a minimal-ish reproducer; (b) spike a more mature compiler (llvm-mos/llvm-C65),
+accepting its immature 65816 + absent SNES banking; (c) the 65816-sim cross-
+check to 100% exonerate Mesen first. The project stands at M3-on-Calypsi (green)
+with a fully-built-but-layout-fragile vbcc path as a documented dead-ish end.
+
 ## 2026-06-13 — vbcc runtime: VM runs, but is layout-sensitive like Calypsi
 
 The decisive vbcc runtime test is in. Headline: **vbcc can execute the exact
