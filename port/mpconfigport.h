@@ -24,7 +24,14 @@
 #define MICROPY_NLR_SETJMP (1)
 
 #define MICROPY_OBJ_REPR (MICROPY_OBJ_REPR_B)
+#if defined(__VBCC__)
+// vbcc rejects __attribute__((aligned)) here; GC block alignment keeps
+// objects even-addressed (repr B only needs bit 0 clear)
+#define MICROPY_OBJ_BASE_ALIGNMENT
+#define MP_NORETURN
+#else
 #define MICROPY_OBJ_BASE_ALIGNMENT __attribute__((aligned(2)))
+#endif
 
 // heap is < 64K so 16-bit GC mark-stack entries suffice
 #define MICROPY_GC_STACK_ENTRY_TYPE uint16_t
