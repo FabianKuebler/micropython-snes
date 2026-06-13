@@ -1,5 +1,30 @@
 # Decisions log
 
+## 2026-06-13 — `volatile ip` (the per-op-split core mechanism) only shuffles
+
+Tested the per-op-split hypothesis the cheap way BEFORE building the split:
+the split's whole value is "`ip` lives in memory, not a register lost across
+calls", so `const byte * volatile ip` is a one-line proxy for it. On Calypsi:
+- First build (a recursion+method program — `fact(5)`, `",".join(...)`, things
+  Calypsi fails in EVERY normal layout): **it printed correct output**
+  (`fact 120`, `join a,b,c`). Briefly looked like a one-line win.
+- But it does NOT hold: the committed M3 program then HANGS, and the very same
+  recursion+method program FAILS (hang / `NotImplementedError: opcode`) after a
+  rebuild or a tiny layout perturbation (padding a function). So the "success"
+  was a lucky layout — `volatile ip` just shuffles the lottery like everything
+  else.
+- `volatile sp` is strictly worse (immediate hang) — `sp` is written constantly
+  and Calypsi drops volatile-auto stores (bug 2); DECISIONS already noted saving
+  sp made it worse.
+
+Conclusion: forcing `ip` to memory — the exact thing a full per-op split would
+do — does not robustly fix the bug; it relocates it. So building the split
+(hours, intricate: `load_check` is a label nested inside a `case`, 11 shared
+jump-targets) is very unlikely to pay off. This closes the structural-workaround
+avenue on Calypsi too. The bug is pervasive layout-sensitive codegen fragility
+in the 21KB function, not a single localizable register-spill. Remaining paths
+unchanged: report upstream (best leverage), spike llvm, or hold at M3.
+
 ## 2026-06-13 — Spikes: splitting the VM and tuning vbcc -O do NOT fix it
 
 Two cheap experiments to see if the vbcc VM layout-sensitivity is curable
