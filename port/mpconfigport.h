@@ -29,6 +29,17 @@
 // objects even-addressed (repr B only needs bit 0 clear)
 #define MICROPY_OBJ_BASE_ALIGNMENT
 #define MP_NORETURN
+#define MP_NOINLINE
+// vbcc's builtin offsetof can't handle nested members (a.b); use the classic
+// address-of-member-in-null form, which it does handle.
+#undef offsetof
+#define offsetof(t, m) ((size_t)((char *)&(((t *)0)->m) - (char *)0))
+// vbcc's stdio.h lacks these (used by py/stream.c)
+#ifndef SEEK_SET
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+#endif
 #else
 #define MICROPY_OBJ_BASE_ALIGNMENT __attribute__((aligned(2)))
 #endif

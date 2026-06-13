@@ -42,6 +42,45 @@ the heap in WRAM bank $7E/$7F), wire the frozen module, then run the programs
 that break Calypsi. That last step answers the real question. Effort is a
 fresh M2+M3-sized chunk.
 
+### Update: 96 of 103 py/ files compile with vbcc (-c99)
+
+Build invocation: `vc +snes-his -c99 -c -O1 -Ivbcc_spike/shim -I. -Imicropython
+-Iport -Ibuild/mpy <file>`. Fixes folded into the workarounds patch /
+mpconfigport.h (all __VBCC__-guarded or portable):
+- offsetof override (vbcc builtin can't do nested members a.b)
+- MP_NOINLINE / MP_NORETURN neutralized; SEEK_SET/CUR/END defined
+- two iterator definitions made `static` to match their forward decls
+  (objlist/objstr — portable, helps both compilers)
+- `#define mp_hal_ticks_ms` to suppress py/mphal.h's clashing prototype
+
+7 files still fail, each needing individual surgery:
+- **binary.c:379** — genuine vbcc INTERNAL COMPILER ERROR (machine.c:3293) on
+  a long long -> unsigned int conversion in mp_binary_set_int. Needs the
+  expression rewritten to dodge the codegen bug. (vbcc bug #1 for us.)
+- **modsys.c:63** — `static const mp_rom_obj_tuple_t = {{...},3,{...}}`. vbcc
+  rejects ALL flexible-array-member *initializers* even with -c99 (verified
+  with a 6-line standalone repro). This is the only core file with an inline
+  FAM-init tuple; fix is the local-struct-with-fixed-items[N]+cast trick.
+- **objgenerator.c:62** — mp_obj_malloc_var on `code_state.state` (offsetof of
+  a nested FAM member); needs the size computed without offsetof-of-FAM.
+- **objnamedtuple.h:40 / objcell.c:53 / objtype.c:326** — a member-after-FAM
+  rejection, a variadic-macro (empty CELL_TYPE_PRINT) count issue, and an
+  "invalid operand type" on an m_del/memcpy line respectively.
+
+Note vbcc's FAM-init rejection is stricter than Calypsi (which silently
+mis-emitted them). For the core it only bites modsys, but extmod/other code
+would need the same treatment.
+
+### Remaining roadmap to the decisive vbcc runtime test
+1. Fix the 7 compile holdouts (above) — ~half a day incl. the ICE workaround.
+2. vbcc memory model + custom linker: far/huge model, 56KB GC heap in WRAM,
+   mailbox at $7FE000, frozen ROM data placement.
+3. Standalone vbcc Makefile path (parallel to the Calypsi one).
+4. Frozen module (reuse host mpy-cross/mpy-tool output — compiler-agnostic).
+5. Run recursion / list iteration / method calls. THIS answers whether vbcc
+   dodges the Calypsi bug. (Strong prior: yes, because vbcc has callee-saved
+   registers r16-r27 — see the M4 root-cause entry.)
+
 ## 2026-06-13 — M4 root cause localized; no simple workaround exists
 
 Followup to the M4-blocker entry below. Two important results:

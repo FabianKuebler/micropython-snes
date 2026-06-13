@@ -31,6 +31,32 @@ index 3c9122a69..1ac0c53f5 100644
  };
  
  // Non-variable sized versions of mp_obj_type_t to be used as a member
+diff --git a/py/objlist.c b/py/objlist.c
+index 41c920511..c26e1db91 100644
+--- a/py/objlist.c
++++ b/py/objlist.c
+@@ -511,7 +511,7 @@ static mp_obj_t list_it_iternext(mp_obj_t self_in) {
+     }
+ }
+ 
+-mp_obj_t mp_obj_new_list_iterator(mp_obj_t list, size_t cur, mp_obj_iter_buf_t *iter_buf) {
++static mp_obj_t mp_obj_new_list_iterator(mp_obj_t list, size_t cur, mp_obj_iter_buf_t *iter_buf) {
+     assert(sizeof(mp_obj_list_it_t) <= sizeof(mp_obj_iter_buf_t));
+     mp_obj_list_it_t *o = (mp_obj_list_it_t *)iter_buf;
+     o->base.type = &mp_type_polymorph_iter;
+diff --git a/py/objstr.c b/py/objstr.c
+index e8b2512a2..491d850e3 100644
+--- a/py/objstr.c
++++ b/py/objstr.c
+@@ -2459,7 +2459,7 @@ static mp_obj_t bytes_it_iternext(mp_obj_t self_in) {
+     }
+ }
+ 
+-mp_obj_t mp_obj_new_bytes_iterator(mp_obj_t str, mp_obj_iter_buf_t *iter_buf) {
++static mp_obj_t mp_obj_new_bytes_iterator(mp_obj_t str, mp_obj_iter_buf_t *iter_buf) {
+     assert(sizeof(mp_obj_str8_it_t) <= sizeof(mp_obj_iter_buf_t));
+     mp_obj_str8_it_t *o = (mp_obj_str8_it_t *)iter_buf;
+     o->base.type = &mp_type_polymorph_iter;
 diff --git a/py/qstr.c b/py/qstr.c
 index 7902646a9..e9d395715 100644
 --- a/py/qstr.c
