@@ -1,5 +1,47 @@
 # Decisions log
 
+## 2026-06-13 — vbcc evaluation: promising alternative to Calypsi for M4
+
+Since the M4 blocker is a Calypsi codegen bug we can't work around (see
+below), evaluating **vbcc 65816 (release 2, Oct 2025)** — a different
+optimizing compiler, free for non-commercial use, with a real SNES target
+(startup, HiROM linker, C library, sim). Toolchain in `vbcc-toolchain/`
+(gitignored; fetch http://www.ibaug.de/vbcc/vbcc65816_r2.zip). Spike in
+`vbcc_spike/`. The Calypsi build remains the primary, green path; vbcc work
+is strictly additive (config is `__VBCC__`-guarded).
+
+Why vbcc could dodge our bug: it has **callee-saved registers (r16-r27
+preserved across calls)** — exactly the feature Calypsi's caller-saved
+_Dp[0-7] model lacks for our bug class. It also offers near/far/**huge**
+pointer models (huge crosses 64K banks, which Calypsi's large model can't).
+
+Results so far (all positive):
+- vbcc -> SNES -> Mesen pipeline validated: `vbcc_spike/hello.c` prints to
+  the $7FE000 mailbox and passes our harness (exit 1).
+- `vm.c` — the exact file Calypsi miscompiles — compiles cleanly on vbcc.
+- Batch compile of py/ core: **91 of 103 files compile** after two small
+  fixes (both folded into the workarounds patch / mpconfigport, vbcc-guarded):
+  - extend the flexible-array-member `slots[12]` fix to `__VBCC__` (vbcc also
+    rejects FAM initializers — same bug-4 class; cleared ~24 files)
+  - `#define mp_hal_ticks_ms` in mphalport.h so py/mphal.h doesn't emit a
+    prototype that clashes with our static inline (vbcc is stricter)
+  - mpconfigport.h: neutralize `__attribute__((aligned))` and `MP_NORETURN`
+    for vbcc.
+- Remaining 11 compile failures are individual, mostly 1-3 line issues:
+  missing `SEEK_SET` (stream.c), storage-class strictness on a few
+  `mp_obj_new_*_iterator` (objlist/objstr), a couple of attribute/macro
+  spots (obj.c, objcell.c, gc.c, objgenerator.c, objtype.c), modsys/
+  objnamedtuple FAM, and ONE vbcc internal-compiler-error (binary.c:379,
+  long-long->unsigned int conversion) that will need an expression rewrite.
+
+Assessment: the vbcc compile phase is tractable and Calypsi-M2-like in
+effort. Still ahead before the decisive runtime test: finish the ~11 compile
+fixes, set up a vbcc memory model + linker for a big GC heap (the stock
+snes-his config is tiny-model with a bank-0 heap — need far/huge model with
+the heap in WRAM bank $7E/$7F), wire the frozen module, then run the programs
+that break Calypsi. That last step answers the real question. Effort is a
+fresh M2+M3-sized chunk.
+
 ## 2026-06-13 — M4 root cause localized; no simple workaround exists
 
 Followup to the M4-blocker entry below. Two important results:

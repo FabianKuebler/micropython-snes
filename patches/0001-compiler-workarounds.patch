@@ -12,14 +12,14 @@ index a9c02a4dd..924688871 100644
  #else
  #if __clang__
 diff --git a/py/obj.h b/py/obj.h
-index 3c9122a69..636db495d 100644
+index 3c9122a69..1ac0c53f5 100644
 --- a/py/obj.h
 +++ b/py/obj.h
 @@ -713,7 +713,15 @@ struct _mp_obj_type_t {
      // A dict mapping qstrs to objects local methods/constants/etc.
      uint8_t slot_index_locals_dict;
  
-+    #if defined(__CALYPSI__)
++    #if defined(__CALYPSI__) || defined(__VBCC__)
 +    // Calypsi 5.17 silently drops initializer data for flexible array
 +    // members (every type's slots came out as zeros). A fixed bound makes
 +    // these ordinary array initializers; layout of the used prefix is
