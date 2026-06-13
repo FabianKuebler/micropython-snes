@@ -53,7 +53,7 @@ PYTHON := python3
 # scripts; type sizes don't matter there, visibility of config-gated code does.
 QCPP := gcc -E
 MP_INC := -I$(PORT) -I$(MPTOP) -I$(MPBUILD)
-MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul -O2 -DNDEBUG \
+MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul -O2 --no-cross-call -DNDEBUG \
            $(MP_INC) --list-file=$(@:.o=.lst)
 
 PY_SRC_NAMES := \
@@ -136,13 +136,34 @@ $(GENHDR)/root_pointers.h: $(GENHDR)/root_pointers.collected
 GENERATED := $(GENHDR)/mpversion.h $(GENHDR)/qstrdefs.generated.h \
              $(GENHDR)/moduledefs.h $(GENHDR)/root_pointers.h
 
+# vm.c's 256-case dispatch switch lands in the weeds with the default
+# strategy; if-else compare chains work (Calypsi bug, DECISIONS.md)
+$(MPBUILD)/py/vm.o: MPCFLAGS += --force-switch if-else
+
 $(MPBUILD)/py/%.o: $(MPTOP)/py/%.c $(PORT)/mpconfigport.h | $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
 $(MPBUILD)/main.o: $(PORT)/main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-$(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS)
+# ---- frozen bytecode: host mpy-cross + mpy-tool ------------------------------
+
+MPY_CROSS := $(MPTOP)/mpy-cross/build/mpy-cross
+
+$(MPY_CROSS):
+	$(MAKE) -C $(MPTOP)/mpy-cross
+
+$(MPBUILD)/main.mpy: $(PORT)/main.py $(MPY_CROSS) | $(GENHDR)
+	$(MPY_CROSS) -o $@ -s main.py $<
+
+$(MPBUILD)/frozen_content.c: $(MPBUILD)/main.mpy $(GENHDR)/qstrdefs.generated.h
+	$(PYTHON) $(MPTOP)/tools/mpy-tool.py -f -q $(GENHDR)/qstrdefs.preprocessed.h \
+	  -mlongint-impl=none $< > $@
+
+$(MPBUILD)/frozen_content.o: $(MPBUILD)/frozen_content.c
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content.o
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy.map $^
 
 clean:

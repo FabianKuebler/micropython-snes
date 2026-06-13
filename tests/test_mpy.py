@@ -1,15 +1,24 @@
-"""M2: MicroPython core, compiled with Calypsi, boots on the emulated SNES.
+"""M3: frozen Python bytecode executes on the emulated SNES.
 
-The DoD for M2 is compile+link; this test goes one step further and proves
-mp_init()/mp_deinit() execute on the 65816 (GC heap setup, qstr pools,
-module table init) — the foundation M3 builds on.
+THIS is the "micropython runs on a SNES" moment: port/main.py is compiled
+to bytecode on the host (mpy-cross), frozen into the ROM, and executed by
+the MicroPython VM on the 65816. Output asserted byte-for-byte.
 """
 
 from conftest import ROOT, STATUS_PASS, build, run_rom
 
+EXPECTED = """\
+hello from micropython on snes
+sum of squares: 285
+caught: ValueError
+65816-on-py
+done
+"""
 
-def test_mp_init(mesen_env, tmp_path):
+
+def test_frozen_main(mesen_env, tmp_path):
     build("mpy")
-    code, text = run_rom(ROOT / "build" / "mpy.sfc", mesen_env, tmp_path)
-    assert text == "mp_init ok\nM2 done\n", f"exit {code}, log:\n{text}"
+    code, text = run_rom(ROOT / "build" / "mpy.sfc", mesen_env, tmp_path,
+                         max_frames=3600)
+    assert text == EXPECTED, f"exit {code}, log:\n{text}"
     assert code == STATUS_PASS

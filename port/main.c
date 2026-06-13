@@ -1,6 +1,10 @@
+#include "py/bc.h"
 #include "py/cstack.h"
+#include "py/frozenmod.h"
 #include "py/gc.h"
+#include "py/mperrno.h"
 #include "py/mphal.h"
+#include "py/objmodule.h"
 #include "py/runtime.h"
 
 #include "../snes/mailbox.h"
@@ -13,6 +17,35 @@
 // C stack: $0100-$1FFF in bank 0 (see snes/linker.scm)
 #define STACK_SIZE 0x1D00
 
+// Execute the frozen main.py; modeled on pyexec_frozen_module but without
+// dragging in the REPL. NB: no locals are modified between nlr_push and the
+// exception path — Calypsi drops volatile stores to stack locals
+// (DECISIONS.md, bug 2), so this function must not rely on them.
+static void run_frozen(void)
+{
+  void *frozen_data;
+  int frozen_type;
+  mp_find_frozen_module("main.py", &frozen_type, &frozen_data);
+  if (frozen_type != MP_FROZEN_MPY) {
+    mb_puts("FATAL: frozen main.py not found\n");
+    mb_finish(MB_STATUS_PANIC);
+  }
+  nlr_buf_t nlr;
+  if (nlr_push(&nlr) == 0) {
+    const mp_frozen_module_t *frozen = frozen_data;
+    mp_module_context_t *ctx = m_new_obj(mp_module_context_t);
+    ctx->module.globals = mp_globals_get();
+    ctx->constants = frozen->constants;
+    mp_obj_t module_fun = mp_make_function_from_proto_fun(frozen->proto_fun, ctx, NULL);
+    mp_call_function_0(module_fun);
+    nlr_pop();
+  } else {
+    mb_puts("uncaught exception\n");
+    mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+    mb_finish(MB_STATUS_PANIC);
+  }
+}
+
 int main(void)
 {
   int stack_dummy;
@@ -20,9 +53,8 @@ int main(void)
   mp_cstack_init_with_top(&stack_dummy, STACK_SIZE);
   gc_init((void *)HEAP_START, (void *)HEAP_END);
   mp_init();
-  mb_puts("mp_init ok\n");
+  run_frozen();
   mp_deinit();
-  mb_puts("M2 done\n");
   mb_finish(MB_STATUS_PASS);
   return 0;
 }

@@ -1,5 +1,77 @@
 # Decisions log
 
+## 2026-06-13 — M3 in progress: Python runs, blocked on a VM miscompile
+
+Frozen `port/main.py` is compiled by host `mpy-cross`, frozen via `mpy-tool`
+into `frozen_content.c`, and executed by the VM on the 65816. Real Python
+output has been observed on the emulator (loops, integer arithmetic,
+exception raise+catch):
+
+```
+hello from micropython on snes
+sum of squares: 285
+caught: ValueError
+```
+
+Getting this far surfaced FOUR more Calypsi 5.17 codegen bugs beyond M1's two
+(workarounds live in `patches/0001-calypsi-workarounds.patch`, applied by
+`make patch-micropython`, and in the Makefile's MPCFLAGS):
+
+### Calypsi bug 4: flexible-array-member initializers silently dropped
+
+`const T x = { ..., .fam = { a, b } }` for a struct ending in `T fam[];`
+emits the fixed fields but ZERO bytes for the FAM contents. MicroPython's
+type system is built on this: every `mp_obj_type_t` ends in `const void
+*slots[]` holding the method pointers, so every type came out with an
+all-zero method table — the first method dispatch jumped to address 0.
+qstr pools (`qstr_pool_t.qstrs[]`) have the same shape. Repro:
+`bugs/calypsi-flexible-array-member-init-dropped.c`. Fix (patch): under
+`__CALYPSI__`, give `mp_obj_type_t.slots` a fixed bound `[12]` (the macros
+never pass more, prefix layout identical), and convert qstr pools to a
+named-array + pointer field; `qstr_pool_new` and `mpy-tool.py`'s frozen
+pool emitter updated to match.
+
+### Calypsi bug 5: --cross-call corrupts indirect-call arguments
+
+With cross-call optimization on (default), calls through the type's call
+slot (`fun_builtin_var_call` -> builtin) passed a wrong arguments pointer —
+`print` received a return address where the args array should be. Traced by
+single-stepping: a clean indirect-call convention probe in `/tmp/probe`
+passed, but the full build failed. Workaround: `--no-cross-call` in
+MPCFLAGS. Cheap; cross-call is a size optimization.
+
+### Calypsi bug 6 (OPEN — current blocker): mp_execute_bytecode miscompiles
+
+`vm.c`'s `mp_execute_bytecode` is a ~17 KB function with a 256-case
+dispatch switch and a setjmp/NLR landing pad. It is miscompiled in a
+layout-sensitive way: every code/config perturbation breaks it
+*differently* — wrong opcode handler, garbage indirect jump, hang, or a
+bogus exception ("NotImplementedError: opcode", "ImportError", "negative
+shift count" depending on switch strategy/-O level). `--force-switch
+if-else` got the furthest (full correct output through the exception
+handler) but is not robust. Synthetic probes so far do NOT reproduce it:
+a 200-case switch is correct under every strategy, and a 200-case switch
+wrapped in setjmp/longjmp is also correct (`/tmp/probe/switch200*.c`). So
+the trigger is something else about this specific function — likely its
+sheer size interacting with register spilling, or a specific opcode
+handler's codegen. Next: bisect vm.c by `#if`-ing out opcode groups, or
+split the dispatch loop into smaller functions.
+
+Note: an earlier "final bug" turned out NOT to be a compiler bug —
+`except ValueError as e` emits `DELETE_NAME`, which the minimal ROM config
+legitimately doesn't implement (raises NotImplementedError at runtime).
+`port/main.py` avoids `as e` and the test expects `caught: ValueError`.
+`MICROPY_CPYTHON_COMPAT` would enable it but is left off to keep the ROM
+minimal.
+
+### Current state at this commit
+
+`make mpy` builds; `pytest -k mpy` FAILS (exit 173, "NotImplementedError:
+opcode") because of bug 6 with the committed build flags. M0/M1/M2 tests
+still pass. The known-furthest recipe was `-O2 --no-cross-call` globally +
+`vm.o` with `--force-switch if-else`; the committed Makefile has the
+per-file `vm.o` if-else override. Heap/stack/mailbox layout from M2 unchanged.
+
 ## 2026-06-12 — Repo location
 
 The plan says `~/Development/micropython-snes`; the agent was invoked in

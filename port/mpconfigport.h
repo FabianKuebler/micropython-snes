@@ -15,8 +15,11 @@
 
 #define MICROPY_CONFIG_ROM_LEVEL (MICROPY_CONFIG_ROM_LEVEL_MINIMUM)
 
-// Bytecode VM only: Python is compiled on the host with mpy-cross
+// Bytecode VM only: Python is compiled on the host with mpy-cross and
+// frozen into the ROM
 #define MICROPY_ENABLE_COMPILER (0)
+#define MICROPY_MODULE_FROZEN_MPY (1)
+#define MICROPY_QSTR_EXTRA_POOL mp_qstr_frozen_const_pool
 #define MICROPY_ENABLE_GC (1)
 #define MICROPY_NLR_SETJMP (1)
 

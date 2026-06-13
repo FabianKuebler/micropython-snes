@@ -1,0 +1,166 @@
+diff --git a/py/misc.h b/py/misc.h
+index a9c02a4dd..924688871 100644
+--- a/py/misc.h
++++ b/py/misc.h
+@@ -81,7 +81,7 @@ typedef unsigned int uint;
+ // do, others only with -Werror=vla, msvc always does.
+ // The (void) is needed to avoid "left operand of comma operator has no effect [-Werror=unused-value]"
+ // when using this macro on the left-hand side of a comma.
+-#if defined(_MSC_VER) || defined(__cplusplus)
++#if defined(_MSC_VER) || defined(__cplusplus) || defined(__CALYPSI__)
+ #define MP_STATIC_ASSERT_NONCONSTEXPR(cond) ((void)1)
+ #else
+ #if __clang__
+diff --git a/py/obj.h b/py/obj.h
+index 3c9122a69..636db495d 100644
+--- a/py/obj.h
++++ b/py/obj.h
+@@ -713,7 +713,15 @@ struct _mp_obj_type_t {
+     // A dict mapping qstrs to objects local methods/constants/etc.
+     uint8_t slot_index_locals_dict;
+ 
++    #if defined(__CALYPSI__)
++    // Calypsi 5.17 silently drops initializer data for flexible array
++    // members (every type's slots came out as zeros). A fixed bound makes
++    // these ordinary array initializers; layout of the used prefix is
++    // identical and MP_DEFINE_CONST_OBJ_TYPE never passes more than 12.
++    const void *slots[12];
++    #else
+     const void *slots[];
++    #endif
+ };
+ 
+ // Non-variable sized versions of mp_obj_type_t to be used as a member
+diff --git a/py/qstr.c b/py/qstr.c
+index 7902646a9..e9d395715 100644
+--- a/py/qstr.c
++++ b/py/qstr.c
+@@ -103,6 +103,16 @@ const qstr_len_t mp_qstr_const_lengths_static[] = {
+     #endif
+ };
+ 
++static const char *const mp_qstr_const_qstrs_static[] = {
++    #ifndef NO_QSTR
++#define QDEF0(id, hash, len, str) str,
++#define QDEF1(id, hash, len, str)
++    #include "genhdr/qstrdefs.generated.h"
++#undef QDEF0
++#undef QDEF1
++    #endif
++};
++
+ const qstr_pool_t mp_qstr_const_pool_static = {
+     NULL,               // no previous pool
+     0,                  // no previous pool
+@@ -113,15 +123,7 @@ const qstr_pool_t mp_qstr_const_pool_static = {
+     (qstr_hash_t *)mp_qstr_const_hashes_static,
+     #endif
+     (qstr_len_t *)mp_qstr_const_lengths_static,
+-    {
+-        #ifndef NO_QSTR
+-#define QDEF0(id, hash, len, str) str,
+-#define QDEF1(id, hash, len, str)
+-        #include "genhdr/qstrdefs.generated.h"
+-#undef QDEF0
+-#undef QDEF1
+-        #endif
+-    },
++    mp_qstr_const_qstrs_static,
+ };
+ 
+ // The next pool is the remainder of the qstrs defined in the firmware. This
+@@ -148,6 +150,16 @@ const qstr_len_t mp_qstr_const_lengths[] = {
+     #endif
+ };
+ 
++static const char *const mp_qstr_const_qstrs[] = {
++    #ifndef NO_QSTR
++#define QDEF0(id, hash, len, str)
++#define QDEF1(id, hash, len, str) str,
++    #include "genhdr/qstrdefs.generated.h"
++#undef QDEF0
++#undef QDEF1
++    #endif
++};
++
+ const qstr_pool_t mp_qstr_const_pool = {
+     &mp_qstr_const_pool_static,
+     MP_QSTRnumber_of_static,
+@@ -158,15 +170,7 @@ const qstr_pool_t mp_qstr_const_pool = {
+     (qstr_hash_t *)mp_qstr_const_hashes,
+     #endif
+     (qstr_len_t *)mp_qstr_const_lengths,
+-    {
+-        #ifndef NO_QSTR
+-#define QDEF0(id, hash, len, str)
+-#define QDEF1(id, hash, len, str) str,
+-        #include "genhdr/qstrdefs.generated.h"
+-#undef QDEF0
+-#undef QDEF1
+-        #endif
+-    },
++    mp_qstr_const_qstrs,
+ };
+ 
+ // If frozen code is enabled, then there is an additional, sorted, ROM pool
+@@ -232,6 +236,7 @@ static qstr qstr_add(mp_uint_t len, const char *q_ptr) {
+             QSTR_EXIT();
+             m_malloc_fail(new_alloc);
+         }
++        pool->qstrs = (const char *const *)(pool + 1);
+         #if MICROPY_QSTR_BYTES_IN_HASH
+         pool->hashes = (qstr_hash_t *)(pool->qstrs + new_alloc);
+         pool->lengths = (qstr_len_t *)(pool->hashes + new_alloc);
+@@ -252,7 +257,7 @@ static qstr qstr_add(mp_uint_t len, const char *q_ptr) {
+     MP_STATE_VM(last_pool)->hashes[at] = hash;
+     #endif
+     MP_STATE_VM(last_pool)->lengths[at] = len;
+-    MP_STATE_VM(last_pool)->qstrs[at] = q_ptr;
++    ((const char **)MP_STATE_VM(last_pool)->qstrs)[at] = q_ptr;
+     MP_STATE_VM(last_pool)->len++;
+ 
+     // return id for the newly-added qstr
+diff --git a/py/qstr.h b/py/qstr.h
+index 0cde6062e..150080554 100644
+--- a/py/qstr.h
++++ b/py/qstr.h
+@@ -88,7 +88,10 @@ typedef struct _qstr_pool_t {
+     qstr_hash_t *hashes;
+     #endif
+     qstr_len_t *lengths;
+-    const char *qstrs[];
++    // A pointer rather than a flexible array member: Calypsi 5.17 silently
++    // drops FAM initializer data (see ports/snes DECISIONS.md). Const pools
++    // point at named arrays; runtime pools point just past the struct.
++    const char *const *qstrs;
+ } qstr_pool_t;
+ 
+ #define QSTR_TOTAL() (MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len)
+diff --git a/tools/mpy-tool.py b/tools/mpy-tool.py
+index 67e2cbf15..2f2b456c2 100755
+--- a/tools/mpy-tool.py
++++ b/tools/mpy-tool.py
+@@ -1676,6 +1676,11 @@ def freeze_mpy(firmware_qstr_idents, compiled_modules):
+         qstr_content += len(qbytes) + 1  # include NUL
+     print("};")
+     print()
++    print("static const char *const mp_qstr_frozen_const_qstrs[] = {")
++    for _, _, qstr, qbytes in new:
++        print('    "%s",' % qstrutil.escape_bytes(qstr, qbytes))
++    print("};")
++    print()
+     print("extern const qstr_pool_t mp_qstr_const_pool;")
+     print("const qstr_pool_t mp_qstr_frozen_const_pool = {")
+     print("    &mp_qstr_const_pool, // previous pool")
+@@ -1686,10 +1691,7 @@ def freeze_mpy(firmware_qstr_idents, compiled_modules):
+     if config.MICROPY_QSTR_BYTES_IN_HASH:
+         print("    (qstr_hash_t *)mp_qstr_frozen_const_hashes,")
+     print("    (qstr_len_t *)mp_qstr_frozen_const_lengths,")
+-    print("    {")
+-    for _, _, qstr, qbytes in new:
+-        print('        "%s",' % qstrutil.escape_bytes(qstr, qbytes))
+-    print("    },")
++    print("    mp_qstr_frozen_const_qstrs,")
+     print("};")
+ 
+     # Freeze all modules.
