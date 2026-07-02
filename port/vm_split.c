@@ -54,8 +54,27 @@ static void vm_trace(char tag, unsigned v) {
     mb_putc(' ');
 }
 #define VM_TRACE_HOOK(tag, v) vm_trace((tag), (unsigned)(v))
+// dump sp low byte and the top three value-stack words (low 16 bits each)
+static void vm_trace_stack(void *sp_in) {
+    mp_obj_t *sp = (mp_obj_t *)sp_in;
+    union { mp_obj_t o; unsigned char b[4]; } u;
+    int i;
+    u.o = (mp_obj_t)sp_in;
+    mb_putc('s');
+    vm_trace(':', u.b[0]);
+    for (i = 0; i > -3; i--) {
+        u.o = sp[i];
+        mb_putc('[');
+        vm_trace(' ', u.b[1]);
+        vm_trace(' ', u.b[0]);
+        mb_putc(']');
+    }
+    mb_putc('\n');
+}
+#define VM_TRACE_STACK(sp) vm_trace_stack(sp)
 #else
 #define VM_TRACE_HOOK(tag, v)
+#define VM_TRACE_STACK(sp)
 #endif
 
 // All mutable VM state. Lives in mp_execute_bytecode's frame but is accessed
@@ -64,6 +83,7 @@ static void vm_trace(char tag, unsigned v) {
 typedef struct _vm_ctx_t {
     mp_code_state_t *code_state;
     const byte *ip;             // live bytecode pointer (code_state->ip marks the executing opcode)
+    byte opcode;                // opcode being executed (MULTI handlers decode it)
     mp_obj_t *sp;               // live value-stack pointer (points at top element)
     mp_obj_t *fastn;            // fastn[0] is local 0, fastn[-1] is local 1, ...
     mp_exc_stack_t *exc_stack;  // base of exception-block stack
@@ -143,6 +163,19 @@ typedef vm_status_t (*vm_op_fun_t)(vm_ctx_t *c);
 #define TOP() (*c->sp)
 #define SET_TOP(val) (*c->sp = (val))
 
+// Dereferencing BELOW a far pointer must never compile to a negative Y index:
+// Calypsi emits `ldy ##-N` + `lda/sta [dp],y`, and the 65816 adds Y as an
+// UNSIGNED 16-bit value across the whole 24-bit address — the access lands in
+// the NEXT bank (reads garbage, writes vanish into ROM). Forcing the adjusted
+// pointer through a volatile temp materializes a real pointer decrement
+// (low-word arithmetic, bank preserved) that the optimizer cannot fold back
+// into an indexed form. Use SP_AT(c, -n) for every c->sp[-n].
+static inline mp_obj_t *vm_ptr_at(mp_obj_t *base, int off) {
+    mp_obj_t *volatile p = base + off;
+    return p;
+}
+#define SP_AT(c, off) (*vm_ptr_at((c)->sp, (off)))
+
 #define PUSH_EXC_BLOCK(with_or_finally) do { \
     DECODE_ULABEL; /* except labels are always forward */ \
     ++c->exc_sp; \
@@ -155,16 +188,15 @@ typedef vm_status_t (*vm_op_fun_t)(vm_ctx_t *c);
     c->exc_sp-- /* pop back to previous exception handler */
 
 #define CANCEL_ACTIVE_FINALLY(sp) do { \
-    if (mp_obj_is_small_int(sp[-1])) { \
+    if (mp_obj_is_small_int(*vm_ptr_at(sp, -1))) { \
         /* Stack: (..., prev_dest_ip, prev_cause, dest_ip) */ \
         /* Cancel the unwind through the previous finally, replace with current one */ \
-        sp[-2] = sp[0]; \
+        *vm_ptr_at(sp, -2) = sp[0]; \
         sp -= 2; \
     } else { \
-        assert(sp[-1] == mp_const_none || mp_obj_is_exception_instance(sp[-1])); \
         /* Stack: (..., None/exception, dest_ip) */ \
         /* Silence the finally's exception value (may be None or an exception) */ \
-        sp[-1] = sp[0]; \
+        *vm_ptr_at(sp, -1) = sp[0]; \
         --sp; \
     } \
 } while (0)
@@ -306,12 +338,12 @@ static vm_status_t op_load_null(vm_ctx_t *c) {
 
 static vm_status_t op_load_fast_n(vm_ctx_t *c) {
     DECODE_UINT;
-    return vm_load_check(c, c->fastn[-(mp_int_t)unum]);
+    return vm_load_check(c, *vm_ptr_at(c->fastn, -(int)unum));
 }
 
 static vm_status_t op_load_deref(vm_ctx_t *c) {
     DECODE_UINT;
-    return vm_load_check(c, mp_obj_cell_get(c->fastn[-(mp_int_t)unum]));
+    return vm_load_check(c, mp_obj_cell_get(*vm_ptr_at(c->fastn, -(int)unum)));
 }
 
 static vm_status_t op_load_name(vm_ctx_t *c) {
@@ -359,13 +391,13 @@ static vm_status_t op_load_subscr(vm_ctx_t *c) {
 
 static vm_status_t op_store_fast_n(vm_ctx_t *c) {
     DECODE_UINT;
-    c->fastn[-(mp_int_t)unum] = POP();
+    *vm_ptr_at(c->fastn, -(int)unum) = POP();
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_store_deref(vm_ctx_t *c) {
     DECODE_UINT;
-    mp_obj_cell_set(c->fastn[-(mp_int_t)unum], POP());
+    mp_obj_cell_set(*vm_ptr_at(c->fastn, -(int)unum), POP());
     return VM_ST_DISPATCH;
 }
 
@@ -383,32 +415,32 @@ static vm_status_t op_store_global(vm_ctx_t *c) {
 
 static vm_status_t op_store_attr(vm_ctx_t *c) {
     DECODE_QSTR;
-    mp_store_attr(c->sp[0], qst, c->sp[-1]);
+    mp_store_attr(c->sp[0], qst, SP_AT(c, -1));
     c->sp -= 2;
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_store_subscr(vm_ctx_t *c) {
-    mp_obj_subscr(c->sp[-1], c->sp[0], c->sp[-2]);
+    mp_obj_subscr(SP_AT(c, -1), c->sp[0], SP_AT(c, -2));
     c->sp -= 3;
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_delete_fast(vm_ctx_t *c) {
     DECODE_UINT;
-    if (c->fastn[-(mp_int_t)unum] == MP_OBJ_NULL) {
+    if (*vm_ptr_at(c->fastn, -(int)unum) == MP_OBJ_NULL) {
         return vm_local_name_error(c);
     }
-    c->fastn[-(mp_int_t)unum] = MP_OBJ_NULL;
+    *vm_ptr_at(c->fastn, -(int)unum) = MP_OBJ_NULL;
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_delete_deref(vm_ctx_t *c) {
     DECODE_UINT;
-    if (mp_obj_cell_get(c->fastn[-(mp_int_t)unum]) == MP_OBJ_NULL) {
+    if (mp_obj_cell_get(*vm_ptr_at(c->fastn, -(int)unum)) == MP_OBJ_NULL) {
         return vm_local_name_error(c);
     }
-    mp_obj_cell_set(c->fastn[-(mp_int_t)unum], MP_OBJ_NULL);
+    mp_obj_cell_set(*vm_ptr_at(c->fastn, -(int)unum), MP_OBJ_NULL);
     return VM_ST_DISPATCH;
 }
 
@@ -432,8 +464,8 @@ static vm_status_t op_dup_top(vm_ctx_t *c) {
 
 static vm_status_t op_dup_top_two(vm_ctx_t *c) {
     c->sp += 2;
-    c->sp[0] = c->sp[-2];
-    c->sp[-1] = c->sp[-3];
+    c->sp[0] = SP_AT(c, -2);
+    SP_AT(c, -1) = SP_AT(c, -3);
     return VM_ST_DISPATCH;
 }
 
@@ -444,16 +476,16 @@ static vm_status_t op_pop_top(vm_ctx_t *c) {
 
 static vm_status_t op_rot_two(vm_ctx_t *c) {
     mp_obj_t top = c->sp[0];
-    c->sp[0] = c->sp[-1];
-    c->sp[-1] = top;
+    c->sp[0] = SP_AT(c, -1);
+    SP_AT(c, -1) = top;
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_rot_three(vm_ctx_t *c) {
     mp_obj_t top = c->sp[0];
-    c->sp[0] = c->sp[-1];
-    c->sp[-1] = c->sp[-2];
-    c->sp[-2] = top;
+    c->sp[0] = SP_AT(c, -1);
+    SP_AT(c, -1) = SP_AT(c, -2);
+    SP_AT(c, -2) = top;
     return VM_ST_DISPATCH;
 }
 
@@ -524,14 +556,14 @@ static vm_status_t op_with_cleanup(vm_ctx_t *c) {
         SET_TOP(mp_const_none);
     } else if (mp_obj_is_small_int(TOP())) {
         // unwind return or unwind jump; same handling for both
-        mp_obj_t data = c->sp[-1];
+        mp_obj_t data = SP_AT(c, -1);
         mp_obj_t cause = c->sp[0];
-        c->sp[-1] = mp_const_none;
+        SP_AT(c, -1) = mp_const_none;
         c->sp[0] = mp_const_none;
         c->sp[1] = mp_const_none;
         mp_call_method_n_kw(3, 0, c->sp - 3);
-        c->sp[-3] = data;
-        c->sp[-2] = cause;
+        SP_AT(c, -3) = data;
+        SP_AT(c, -2) = cause;
         c->sp -= 2; // we removed (__exit__, ctx_mgr)
     } else {
         assert(mp_obj_is_exception_instance(TOP()));
@@ -621,7 +653,7 @@ static vm_status_t op_for_iter(vm_ctx_t *c) {
     if (*(c->sp - MP_OBJ_ITER_BUF_NSLOTS + 1) == MP_OBJ_NULL) {
         obj = *(c->sp - MP_OBJ_ITER_BUF_NSLOTS + 2);
     } else {
-        obj = MP_OBJ_FROM_PTR(&c->sp[-MP_OBJ_ITER_BUF_NSLOTS + 1]);
+        obj = MP_OBJ_FROM_PTR(vm_ptr_at(c->sp, -MP_OBJ_ITER_BUF_NSLOTS + 1));
     }
     mp_obj_t value = mp_iternext_allow_raise(obj);
     if (value == MP_OBJ_STOP_ITERATION) {
@@ -692,12 +724,12 @@ static vm_status_t op_build_slice(vm_ctx_t *c) {
 
 static vm_status_t op_store_comp(vm_ctx_t *c) {
     DECODE_UINT;
-    mp_obj_t obj = c->sp[-(mp_int_t)(unum >> 2)];
+    mp_obj_t obj = *vm_ptr_at(c->sp, -(int)(unum >> 2));
     if ((unum & 3) == 0) {
         mp_obj_list_append(obj, c->sp[0]);
         c->sp--;
     } else if (!MICROPY_PY_BUILTINS_SET || (unum & 3) == 1) {
-        mp_obj_dict_store(obj, c->sp[0], c->sp[-1]);
+        mp_obj_dict_store(obj, c->sp[0], SP_AT(c, -1));
         c->sp -= 2;
     #if MICROPY_PY_BUILTINS_SET
     } else {
@@ -882,28 +914,28 @@ static vm_status_t op_import_star(vm_ctx_t *c) {
 }
 
 static vm_status_t op_load_const_small_int_multi(vm_ctx_t *c) {
-    PUSH(MP_OBJ_NEW_SMALL_INT((mp_int_t)c->ip[-1] - MP_BC_LOAD_CONST_SMALL_INT_MULTI - MP_BC_LOAD_CONST_SMALL_INT_MULTI_EXCESS));
+    PUSH(MP_OBJ_NEW_SMALL_INT((mp_int_t)c->opcode - MP_BC_LOAD_CONST_SMALL_INT_MULTI - MP_BC_LOAD_CONST_SMALL_INT_MULTI_EXCESS));
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_load_fast_multi(vm_ctx_t *c) {
-    return vm_load_check(c, c->fastn[MP_BC_LOAD_FAST_MULTI - (mp_int_t)c->ip[-1]]);
+    return vm_load_check(c, *vm_ptr_at(c->fastn, MP_BC_LOAD_FAST_MULTI - (int)c->opcode));
 }
 
 static vm_status_t op_store_fast_multi(vm_ctx_t *c) {
-    c->fastn[MP_BC_STORE_FAST_MULTI - (mp_int_t)c->ip[-1]] = POP();
+    *vm_ptr_at(c->fastn, MP_BC_STORE_FAST_MULTI - (int)c->opcode) = POP();
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_unary_op_multi(vm_ctx_t *c) {
-    SET_TOP(mp_unary_op(c->ip[-1] - MP_BC_UNARY_OP_MULTI, TOP()));
+    SET_TOP(mp_unary_op(c->opcode - MP_BC_UNARY_OP_MULTI, TOP()));
     return VM_ST_DISPATCH;
 }
 
 static vm_status_t op_binary_op_multi(vm_ctx_t *c) {
     mp_obj_t rhs = POP();
     mp_obj_t lhs = TOP();
-    SET_TOP(mp_binary_op(c->ip[-1] - MP_BC_BINARY_OP_MULTI, lhs, rhs));
+    SET_TOP(mp_binary_op(c->opcode - MP_BC_BINARY_OP_MULTI, lhs, rhs));
     return VM_ST_DISPATCH;
 }
 
@@ -1114,7 +1146,9 @@ static vm_status_t vm_dispatch(vm_ctx_t *c) {
         // advance past it (handlers use c->ip[-1] to recover the opcode).
         cs->ip = c->ip;
         VM_TRACE_HOOK('.', *c->ip);
-        vm_status_t st = vm_op_table[*c->ip++](c);
+        VM_TRACE_STACK(c->sp);
+        c->opcode = *c->ip++;
+        vm_status_t st = vm_op_table[c->opcode](c);
         if (st == VM_ST_DISPATCH) {
             continue;
         }

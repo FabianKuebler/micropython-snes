@@ -1,5 +1,40 @@
 # Decisions log
 
+## 2026-07-03 — THE negative-Y bug: Calypsi far indexing crosses banks (6/6 green)
+
+**Calypsi bug (the big one): `p[-1]` on a far pointer sometimes compiles to
+`ldy ##-2` + `lda/sta [dp],y`. The 65816 adds Y to the 24-bit base as an
+UNSIGNED 16-bit value, so the access lands in the NEXT bank** — reads return
+garbage from +64KB away, writes vanish (into ROM). Whether the compiler
+picks the negative-Y form or the safe adjust-base-then-positive-Y form is
+register-pressure roulette per compilation, which finally explains the
+"every constituent op works in isolation, the combination fails, and the
+failure moves when you touch anything" pattern that has haunted this port.
+
+Found via the VM stack tracer: `0 <= 5 <= 15` (chained comparison) showed
+ROT_THREE turning stack [5,5,0] into [5,GARBAGE,0] — the generated code read
+`sp[-2]` from bank+1 and wrote `sp[-2]` into bank+1 (listing: `ldy ##-8;
+lda [(_Dp+8)],y`). 18 such sites existed in vm_split.o alone (rot ops,
+dup_top_two, store_subscr, with_cleanup, the unwind helpers' CANCEL_ACTIVE_
+FINALLY). test_m4's regression was the same bug landing in the FAST_N
+locals indexing (`fastn[-unum]`).
+
+Fixes:
+- `port/vm_split.c`: every below-pointer access goes through
+  `vm_ptr_at(base, off)` — the adjusted pointer is materialized via a
+  volatile temp (low-word pointer arithmetic preserves the bank; the
+  optimizer cannot fold it back into an indexed form). MULTI opcode
+  handlers take the opcode from a new `vm_ctx_t.opcode` field instead of
+  reading `ip[-1]`.
+- **`tools/check_neg_index.py`**: scans every generated .lst for
+  `ldy ##<negative>` followed by long-indexed addressing and FAILS the
+  build. Wired into all four ROM links next to check_obj_align. Current
+  py/ core compiles clean; the checker guards the roulette.
+- Report upstream to Calypsi (hth313) with the rot_three listing.
+
+Suite back to 6/6 (test_m4 recovered). Chained comparisons, swaps,
+multi-assignment all verified in the emulator.
+
 ## 2026-07-03 — WIP: nano-gui groundwork — a compiler-bug safari (5/6 green)
 
 Goal: run peterhinch/micropython-nano-gui. Status: the Python side runs

@@ -202,6 +202,7 @@ $(MPBUILD)/frozen_content.o: $(MPBUILD)/frozen_content.c
 $(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy.map
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M4: the decisive constructs (recursion, methods, classes, generators) --
 # Same ROM as mpy but freezing port/main_m4.py; needs the split VM to pass.
@@ -222,6 +223,7 @@ $(MPBUILD)/frozen_content_m4.o: $(MPBUILD)/frozen_content_m4.c
 $(BUILD)/mpy4.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_m4.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy4.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M7: nano-gui (peterhinch/micropython-nano-gui, frozen package tree) ----
 # port/main_gui.py + the vendored pylib are each compiled by mpy-cross with
@@ -259,6 +261,7 @@ mpygui: $(BUILD)/mpygui.sfc
 $(BUILD)/mpygui.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpygui.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpygui.map
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M5: interactive REPL (compiler runs on the 65816) ----------------------
 # Same core objects but port/repl_main.c as main; frozen_content.o is still
@@ -289,6 +292,7 @@ REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
 $(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyrepl.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyrepl.map
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 clean:
 	rm -rf $(BUILD)
