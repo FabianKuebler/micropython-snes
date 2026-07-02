@@ -13,6 +13,7 @@
 #include "py/gc.h"
 #include "py/mperrno.h"
 #include "py/mphal.h"
+#include "py/parsenum.h"
 #include "py/repl.h"
 #include "py/runtime.h"
 
@@ -132,6 +133,36 @@ int main(void)
   console_init();
   oskb_init();
   mp_init();
+  #ifdef REPL_DEBUG
+  {
+    typedef union { float f; unsigned long u; } fu;
+    static const float tf[4] = { 1.5f, 10.0f, 1e8f, 1e-8f };
+    static volatile float vf = 10.0f;
+    fu r;
+    int i;
+    mb_puts("romconst=");
+    for (i = 0; i < 4; i++) {
+      r.f = tf[i];
+      mb_puthex32(r.u); // 3fc00000 41200000 4cbebc20 322bcc77
+      mb_putc(' ');
+    }
+    r.f = vf;
+    mb_puts("ramvar=");
+    mb_puthex32(r.u);
+    r.f = 0.15f * tf[1]; // 1.5: const-fold x ROM read
+    mb_puts(" mul10=");
+    mb_puthex32(r.u);
+    mb_putc('\n');
+    // parse "1.5" and "3.0" the way the compiler does
+    r.f = mp_obj_get_float(mp_parse_num_float("1.5", 3, false, NULL));
+    mb_puts("parse(1.5)=");
+    mb_puthex32(r.u); // 3fc00000
+    r.f = mp_obj_get_float(mp_parse_num_float("3.0", 3, false, NULL));
+    mb_puts(" parse(3.0)=");
+    mb_puthex32(r.u); // 40400000
+    mb_putc('\n');
+  }
+  #endif
   out_puts("MicroPython on SNES; ^D exits\n"); // <= 32 cols: no line wrap
   vstr_t line;
   vstr_init(&line, 64);

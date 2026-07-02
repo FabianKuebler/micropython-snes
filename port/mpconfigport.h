@@ -68,8 +68,26 @@
 #define MICROPY_ENABLE_EXTERNAL_IMPORT (0)
 #define MICROPY_ERROR_REPORTING (MICROPY_ERROR_REPORTING_NORMAL)
 #define MICROPY_ROM_TEXT_COMPRESSION (0)
-#define MICROPY_FLOAT_IMPL (MICROPY_FLOAT_IMPL_NONE)
+// Floats: Calypsi's C library provides IEEE single-precision incl. the
+// f-suffixed math functions (sqrtf, sinf, ...) that FLOAT_IMPL_FLOAT uses.
+// Needed for nano-gui (widget geometry works in floats).
+#define MICROPY_FLOAT_IMPL (MICROPY_FLOAT_IMPL_FLOAT)
+#define MICROPY_PY_MATH (1)
 #define MICROPY_LONGINT_IMPL (MICROPY_LONGINT_IMPL_NONE)
+
+// nano-gui prerequisites: framebuf for drawing, memoryview + bytearray for
+// Writer and the display buffer
+#define MICROPY_PY_FRAMEBUF (1)
+#define MICROPY_PY_BUILTINS_MEMORYVIEW (1)
+#define MICROPY_PY_BUILTINS_BYTEARRAY (1)
+
+#if !defined(__VBCC__)
+// Calypsi's math.h/libm lack C99 signbit and nearbyint*; shim them.
+// signbit(x)<0 misses negative zero — acceptable (only affects "-0.0" repr).
+#define signbit(x) ((x) < 0)
+#define nearbyintf roundf
+#define nearbyint round
+#endif
 
 #define MP_ENDIANNESS_LITTLE (1)
 

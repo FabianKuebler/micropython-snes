@@ -88,6 +88,15 @@ PY_SRC_NAMES := \
 	smallint.c frozenmod.c
 
 PY_OBJS := $(addprefix $(MPBUILD)/py/,$(PY_SRC_NAMES:.c=.o))
+
+# extmod modules (framebuf for nano-gui)
+EXTMOD_SRC_NAMES := modframebuf.c
+PY_OBJS += $(addprefix $(MPBUILD)/extmod/,$(EXTMOD_SRC_NAMES:.c=.o))
+
+$(MPBUILD)/extmod/%.o: $(MPTOP)/extmod/%.c $(PORT)/mpconfigport.h | $(GENERATED)
+	@mkdir -p $(MPBUILD)/extmod
+	$(CC) -o $@ $< $(MPCFLAGS)
+
 PORT_OBJS := $(MPBUILD)/main.o $(SNES_OBJS)
 
 # VM_SPLIT=1 replaces py/vm.c (one 21KB function both compilers miscompile
@@ -104,6 +113,7 @@ $(VMSTAMP): | $(GENHDR)
 	rm -f $(MPBUILD)/vmsel_*.stamp
 	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
+            $(addprefix $(MPTOP)/extmod/,$(EXTMOD_SRC_NAMES)) \
             $(PORT)/main.c $(PORT)/repl_main.c
 
 .PHONY: mpy patch-micropython

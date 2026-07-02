@@ -127,8 +127,21 @@ index 033ac9c76..e532cd80b 100644
  }
  
  id_info_t *mp_emit_common_get_id_for_modification(scope_t *scope, qstr qst);
+diff --git a/py/formatfloat.c b/py/formatfloat.c
+index 1ea34f84b..2bb7785f8 100644
+--- a/py/formatfloat.c
++++ b/py/formatfloat.c
+@@ -65,7 +65,7 @@
+ 
+ static inline int fp_expval(mp_float_t x) {
+     mp_float_union_t fb = { x };
+-    return (int)fb.p.exp - MP_FLOAT_EXP_OFFSET;
++    return MP_FLOAT_UNION_EXP(fb) - MP_FLOAT_EXP_OFFSET;
+ }
+ 
+ #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
 diff --git a/py/misc.h b/py/misc.h
-index a9c02a4dd..2a0b8f921 100644
+index a9c02a4dd..18d0240c9 100644
 --- a/py/misc.h
 +++ b/py/misc.h
 @@ -81,7 +81,9 @@ typedef unsigned int uint;
@@ -160,7 +173,36 @@ index a9c02a4dd..2a0b8f921 100644
  #define m_del_obj(type, ptr) (m_del(type, ptr, 1))
  
  void *m_malloc(size_t num_bytes);
-@@ -415,6 +425,43 @@ static inline uint32_t mp_ctz(uint32_t x) {
+@@ -272,11 +282,13 @@ extern mp_uint_t mp_verbose_flag;
+ #define MP_FLOAT_EXP_OFFSET (1023)
+ #define MP_FLOAT_FRAC_BITS (52)
+ typedef uint64_t mp_float_uint_t;
++typedef int64_t mp_float_int_t;
+ #elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT
+ #define MP_FLOAT_EXP_BITS (8)
+ #define MP_FLOAT_EXP_OFFSET (127)
+ #define MP_FLOAT_FRAC_BITS (23)
+ typedef uint32_t mp_float_uint_t;
++typedef int32_t mp_float_int_t;
+ #endif
+ 
+ #define MP_FLOAT_EXP_BIAS ((1 << (MP_FLOAT_EXP_BITS - 1)) - 1)
+@@ -299,6 +311,14 @@ typedef union _mp_float_union_t {
+     mp_float_uint_t i;
+ } mp_float_union_t;
+ 
++// Bitfield-free accessors for mp_float_union_t. Calypsi 65816 miscompiles
++// read-modify-write of bitfields with 32-bit storage units (and its
++// optimizer can ICE on them), so ports use these shift/mask equivalents.
++#define MP_FLOAT_UNION_SGN(u) ((int)((u).i >> (MP_FLOAT_FRAC_BITS + MP_FLOAT_EXP_BITS)) & 1)
++#define MP_FLOAT_UNION_EXP(u) ((int)((u).i >> MP_FLOAT_FRAC_BITS) & ((1 << MP_FLOAT_EXP_BITS) - 1))
++#define MP_FLOAT_UNION_FRC(u) ((u).i & (((mp_float_uint_t)1 << MP_FLOAT_FRAC_BITS) - 1))
++#define MP_FLOAT_UNION_ADD_EXP(u, d) ((u).i += (mp_float_uint_t)(mp_float_int_t)(d) << MP_FLOAT_FRAC_BITS)
++
+ #if MICROPY_FLOAT_FORMAT_IMPL == MICROPY_FLOAT_FORMAT_IMPL_EXACT
+ 
+ #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT
+@@ -415,6 +435,43 @@ static inline uint32_t mp_ctz(uint32_t x) {
  static inline uint32_t mp_popcount(uint32_t x) {
      return __popcnt(x);
  }
@@ -204,7 +246,7 @@ index a9c02a4dd..2a0b8f921 100644
  #else // _MSC_VER
  #define mp_clz(x) __builtin_clz(x)
  #define mp_clzl(x) __builtin_clzl(x)
-@@ -481,6 +528,20 @@ static inline bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *re
+@@ -481,6 +538,20 @@ static inline bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *re
      return __builtin_mul_overflow(x, y, res);
  }
  
@@ -225,7 +267,7 @@ index a9c02a4dd..2a0b8f921 100644
  #else
  
  bool mp_mul_ll_overflow(long long int x, long long int y, long long int *res);
-@@ -497,6 +558,14 @@ static inline bool mp_mul_ull_overflow(unsigned long long int x, unsigned long l
+@@ -497,6 +568,14 @@ static inline bool mp_mul_ull_overflow(unsigned long long int x, unsigned long l
  
  #if __has_builtin(__builtin_saddll_overflow) || MP_GCC_HAS_BUILTIN_OVERFLOW
  #define mp_add_ll_overflow __builtin_saddll_overflow
@@ -240,7 +282,7 @@ index a9c02a4dd..2a0b8f921 100644
  #else
  static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
      bool overflow;
-@@ -517,6 +586,14 @@ static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long
+@@ -517,6 +596,14 @@ static inline bool mp_add_ll_overflow(long long int lhs, long long int rhs, long
  
  #if __has_builtin(__builtin_ssubll_overflow) || MP_GCC_HAS_BUILTIN_OVERFLOW
  #define mp_sub_ll_overflow __builtin_ssubll_overflow
@@ -460,6 +502,41 @@ index 3360a4e20..ca327a998 100644
      .base = { &mp_type_module },
      .globals = (mp_obj_dict_t *)&mp_module_weakref_globals,
  };
+diff --git a/py/mpz.c b/py/mpz.c
+index 5a4d7d27d..82c694a9f 100644
+--- a/py/mpz.c
++++ b/py/mpz.c
+@@ -758,16 +758,16 @@ void mpz_set_from_ll(mpz_t *z, long long val, bool is_signed) {
+ #if MICROPY_PY_BUILTINS_FLOAT
+ void mpz_set_from_float(mpz_t *z, mp_float_t src) {
+     mp_float_union_t u = {src};
+-    z->neg = u.p.sgn;
+-    if (u.p.exp == 0) {
++    z->neg = MP_FLOAT_UNION_SGN(u);
++    if (MP_FLOAT_UNION_EXP(u) == 0) {
+         // value == 0 || value < 1
+         mpz_set_from_int(z, 0);
+-    } else if (u.p.exp == ((1 << MP_FLOAT_EXP_BITS) - 1)) {
+-        // u.p.frc == 0 indicates inf, else NaN
++    } else if (MP_FLOAT_UNION_EXP(u) == ((1 << MP_FLOAT_EXP_BITS) - 1)) {
++        // frc == 0 indicates inf, else NaN
+         // should be handled by caller
+         mpz_set_from_int(z, 0);
+     } else {
+-        const int adj_exp = (int)u.p.exp - MP_FLOAT_EXP_BIAS;
++        const int adj_exp = MP_FLOAT_UNION_EXP(u) - MP_FLOAT_EXP_BIAS;
+         if (adj_exp < 0) {
+             // value < 1 , truncates to 0
+             mpz_set_from_int(z, 0);
+@@ -779,7 +779,7 @@ void mpz_set_from_float(mpz_t *z, mp_float_t src) {
+             const int dig_cnt = (adj_exp + 1 + (DIG_SIZE - 1)) / DIG_SIZE;
+             const unsigned int rem = adj_exp % DIG_SIZE;
+             int dig_ind, shft;
+-            mp_float_uint_t frc = u.p.frc | ((mp_float_uint_t)1 << MP_FLOAT_FRAC_BITS);
++            mp_float_uint_t frc = MP_FLOAT_UNION_FRC(u) | ((mp_float_uint_t)1 << MP_FLOAT_FRAC_BITS);
+ 
+             if (adj_exp < MP_FLOAT_FRAC_BITS) {
+                 shft = 0;
 diff --git a/py/obj.h b/py/obj.h
 index 3c9122a69..bb28cfa51 100644
 --- a/py/obj.h
@@ -594,6 +671,36 @@ index 5b3e3660e..f460d763b 100644
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_false_obj = {{&mp_type_bool}, false};
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_true_obj = {{&mp_type_bool}, true};
  #endif
+diff --git a/py/objfloat.c b/py/objfloat.c
+index b0ad70de4..4a1ef549f 100644
+--- a/py/objfloat.c
++++ b/py/objfloat.c
+@@ -77,14 +77,14 @@ const mp_obj_float_t mp_const_float_nan_obj = {{&mp_type_float}, (mp_float_t)NAN
+ mp_int_t mp_float_hash(mp_float_t src) {
+     mp_float_union_t u = {.f = src};
+     mp_int_t val;
+-    const int adj_exp = (int)u.p.exp - MP_FLOAT_EXP_BIAS;
++    const int adj_exp = MP_FLOAT_UNION_EXP(u) - MP_FLOAT_EXP_BIAS;
+     if (adj_exp < 0) {
+         // value < 1; must be sure to handle 0.0 correctly (ie return 0)
+         val = u.i;
+     } else {
+         // if adj_exp is max then: u.p.frc==0 indicates inf, else NaN
+         // else: 1 <= value
+-        mp_float_uint_t frc = u.p.frc | ((mp_float_uint_t)1 << MP_FLOAT_FRAC_BITS);
++        mp_float_uint_t frc = MP_FLOAT_UNION_FRC(u) | ((mp_float_uint_t)1 << MP_FLOAT_FRAC_BITS);
+ 
+         if (adj_exp <= MP_FLOAT_FRAC_BITS) {
+             // number may have a fraction; xor the integer part with the fractional part
+@@ -99,7 +99,7 @@ mp_int_t mp_float_hash(mp_float_t src) {
+         }
+     }
+ 
+-    if (u.p.sgn) {
++    if (MP_FLOAT_UNION_SGN(u)) {
+         val = -(mp_uint_t)val;
+     }
+ 
 diff --git a/py/objgenerator.c b/py/objgenerator.c
 index a0cee5d48..895bbb590 100644
 --- a/py/objgenerator.c
@@ -607,6 +714,22 @@ index a0cee5d48..895bbb590 100644
  
  /******************************************************************************/
  /* generator wrapper                                                          */
+diff --git a/py/objint.c b/py/objint.c
+index 901264aca..fbde0e356 100644
+--- a/py/objint.c
++++ b/py/objint.c
+@@ -143,9 +143,9 @@ static mp_fp_as_int_class_t mp_classify_fp_as_int(mp_float_t val) {
+ mp_obj_t mp_obj_new_int_from_float(mp_float_t val) {
+     mp_float_union_t u = {val};
+     // IEEE-754: if biased exponent is all 1 bits...
+-    if (u.p.exp == ((1 << MP_FLOAT_EXP_BITS) - 1)) {
++    if (MP_FLOAT_UNION_EXP(u) == ((1 << MP_FLOAT_EXP_BITS) - 1)) {
+         // ...then number is Inf (positive or negative) if fraction is 0, else NaN.
+-        if (u.p.frc == 0) {
++        if (MP_FLOAT_UNION_FRC(u) == 0) {
+             mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("can't convert inf to int"));
+         } else {
+             mp_raise_ValueError(MP_ERROR_TEXT("can't convert NaN to int"));
 diff --git a/py/objlist.c b/py/objlist.c
 index 41c920511..c26e1db91 100644
 --- a/py/objlist.c
@@ -757,6 +880,19 @@ index 1a50b13b5..df291ee24 100644
          struct _mp_parse_chunk_t *next;
      } union_;
      byte data[];
+diff --git a/py/parsenum.c b/py/parsenum.c
+index 05bcc0f0a..8ec62cd45 100644
+--- a/py/parsenum.c
++++ b/py/parsenum.c
+@@ -269,7 +269,7 @@ mp_large_float_t mp_decimal_exp(mp_large_float_t num, int dec_exp) {
+     //   when the result is expected to be in mp_float_t range (e.g. during format)
+     // - we don't need to care about p.exp overflow, as (5.0 ** dec_exp) will anyway
+     //   force the final result toward the proper edge if needed (0.0 or inf)
+-    res.p.exp += dec_exp;
++    MP_FLOAT_UNION_ADD_EXP(res, dec_exp);
+     // Use positive exponents when they are more precise then negative
+     if (dec_exp < 0 && dec_exp >= -MAX_EXACT_POWER_OF_5) {
+         res.f /= MICROPY_FLOAT_C_FUN(pow)(5, -dec_exp);
 diff --git a/py/qstr.c b/py/qstr.c
 index 7902646a9..e9d395715 100644
 --- a/py/qstr.c
