@@ -1,5 +1,45 @@
 # Decisions log
 
+## 2026-07-02 — M6 GREEN: REPL on the TV with joypad input
+
+The REPL ROM (`make mpyrepl`) now drives a real screen and takes controller
+input — it would work on actual hardware from a flashcart. pytest 6/6; the
+new `tests/test_joypad.py` scripts controller 1 to navigate the on-screen
+keyboard, type `1+2`, run it (SNES prints 3) and exit via Select.
+
+- **Text console** (`snes/console.c`): mode 0, BG1 2bpp, 32x28 cells, white
+  on dark blue. Font: vendored public-domain `snes/font8x8_basic.h`
+  (dhepper/font8x8, IBM VGA lineage), converted at build time by
+  `tools/font2snes.py` into 192 SNES tiles (96 normal + 96 highlighted, the
+  highlight variants use plane1=0xFF so palette c2/c3 give inverted cells —
+  needed because BG color 0 is transparent, so a "swap palette" trick can't
+  paint a filled background). No interrupts: the REPL is synchronous, so
+  console_flush() polls $4212 for vblank and DMA's the whole 1792-byte WRAM
+  shadow tilemap — dead simple, no dirty tracking, one frame per flush.
+  Rows 0-20 scroll as a terminal (block cursor overlaid during DMA); rows
+  21-27 are static (separator, keyboard, hints). DMA source addresses are
+  derived via a pointer/byte-array union, avoiding pointer->int casts.
+- **On-screen keyboard** (`snes/oskb.c`): name-entry style 13x4 grid, two
+  pages (Y toggles lower+digits+code-symbols / upper+rest — all 95 printable
+  ASCII covered), D-pad with hold-autorepeat (14-frame delay, 4-frame rate),
+  A=type, B=backspace, X=space, Start=Enter, Select=Ctrl-D. Auto-joypad
+  read is enabled WITHOUT NMI ($4200=0x01) and polled at $4218/9.
+- **Dual channels**: repl_main writes every byte to both the mailbox ring
+  (pytest asserts it, unchanged) and the console; input is merged from the
+  mailbox stdin ring (scripted) and oskb_poll() (human/scripted joypad). So
+  ONE ROM serves CI and the TV. Backspace edits the vstr and the screen but
+  is never emitted to the (append-only) mailbox log.
+- **Harness**: `run_rom(..., joypad=[...])` scripts controller 1 — MUST be
+  applied inside Mesen's `inputPolled` event (setInput from the endFrame
+  callback is overwritten by the real input system and does nothing; that
+  cost an hour). Screenshots via `emu.takeScreenshot()` in a Lua callback
+  were used to verify rendering headlessly.
+- Banner shortened to "MicroPython on SNES; ^D exits" (<= 32 cols, no wrap).
+
+Next ideas parked: input-line cursor movement + history on L/R, SNES mouse
+support, and the `snesfb` framebuffer module (unique-tile trick) as the
+bridge toward a MicroPython GUI library.
+
 ## 2026-07-02 — M5 GREEN: interactive REPL, Python compiled ON the 65816
 
 `make mpyrepl` builds a REPL ROM (`port/repl_main.c`): lines arrive through a

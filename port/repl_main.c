@@ -16,7 +16,42 @@
 #include "py/repl.h"
 #include "py/runtime.h"
 
+#include "../snes/console.h"
 #include "../snes/mailbox.h"
+#include "../snes/oskb.h"
+
+// Everything the REPL prints goes to BOTH channels: the mailbox ring (read
+// by the Mesen harness / pytest) and the PPU text console (a real TV).
+static void out_putc(char c)
+{
+  mb_putc(c);
+  console_putc(c);
+}
+
+static void out_puts(const char *s)
+{
+  while (*s) {
+    out_putc(*s++);
+  }
+}
+
+// Input arrives from EITHER the mailbox stdin ring (scripted sessions) or
+// the joypad on-screen keyboard. The wait loop is paced to one iteration
+// per frame by console_flush()'s vblank wait.
+static int in_getc(void)
+{
+  for (;;) {
+    int c = mb_getc_nonblock();
+    if (c >= 0) {
+      return c;
+    }
+    c = oskb_poll();
+    if (c >= 0) {
+      return c;
+    }
+    console_flush();
+  }
+}
 
 // GC heap: WRAM bank $7F below the mailbox, one bank only (far pointer
 // arithmetic must never cross a bank boundary, DECISIONS.md). 56KB.
@@ -53,26 +88,37 @@ static void exec_line(vstr_t *line)
 static int read_input(vstr_t *line)
 {
   int at_line_start = 1;
+  size_t line_start_len = 0;
   for (;;) {
-    char c = mb_getc();
+    char c = (char)in_getc();
     if (c == 0x04 && at_line_start && line->len == 0) {
       return 0;
     }
     if (c == '\r') {
       continue;
     }
+    if (c == '\b' || c == 0x7f) {
+      // joypad B: rub out within the current physical line only. The
+      // mailbox log stays append-only (scripted sessions never backspace).
+      if (line->len > line_start_len) {
+        line->len--;
+        console_putc('\b');
+      }
+      continue;
+    }
     if (c == '\n') {
-      mb_putc('\n');
+      out_putc('\n');
       if (mp_repl_continue_with_input(vstr_null_terminated_str(line))) {
         vstr_add_byte(line, '\n');
-        mb_puts("... ");
+        out_puts("... ");
         at_line_start = 1;
+        line_start_len = line->len;
         continue;
       }
       return 1;
     }
     vstr_add_byte(line, c);
-    mb_putc(c);
+    out_putc(c);
     at_line_start = 0;
   }
 }
@@ -83,13 +129,15 @@ int main(void)
   mb_init();
   mp_cstack_init_with_top(&stack_dummy, STACK_SIZE);
   gc_init((void *)HEAP_START, (void *)HEAP_END);
+  console_init();
+  oskb_init();
   mp_init();
-  mb_puts("MicroPython on SNES; Ctrl-D exits\n");
+  out_puts("MicroPython on SNES; ^D exits\n"); // <= 32 cols: no line wrap
   vstr_t line;
   vstr_init(&line, 64);
   for (;;) {
     vstr_reset(&line);
-    mb_puts(">>> ");
+    out_puts(">>> ");
     if (!read_input(&line)) {
       break;
     }
@@ -98,7 +146,7 @@ int main(void)
     }
     exec_line(&line);
   }
-  mb_puts("\nbye\n");
+  out_puts("\nbye\n");
   mp_deinit();
   mb_finish(MB_STATUS_PASS);
   return 0;
@@ -137,7 +185,7 @@ mp_uint_t mp_hal_stdout_tx_strn(const char *str, size_t len)
 {
   mp_uint_t n = len;
   while (len--) {
-    mb_putc(*str++);
+    out_putc(*str++);
   }
   return n;
 }

@@ -15,6 +15,33 @@ local IN_RING_SIZE = 512
 local STDIN = "@STDIN@"
 local stdinPos = 0
 
+-- Scripted joypad-1 input: one entry per polled frame, a button name
+-- ("a","b","x","y","l","r","up","down","left","right","start","select")
+-- or "" for released. Applied via the inputPolled event (setInput anywhere
+-- else is overwritten by the real input system). Empty table = no joypad.
+local JOYSEQ = {@JOYSEQ@}
+local joyIdx = 1
+local joyWait = 120 -- frames of boot time before the script starts
+
+local function onInputPolled()
+  if #JOYSEQ == 0 then
+    return
+  end
+  local btn = ""
+  if joyWait > 0 then
+    joyWait = joyWait - 1
+  elseif joyIdx <= #JOYSEQ then
+    btn = JOYSEQ[joyIdx]
+    joyIdx = joyIdx + 1
+  end
+  local state = {}
+  if btn ~= "" then
+    state[btn] = true
+  end
+  emu.setInput(state, 0)
+end
+emu.addEventCallback(onInputPolled, emu.eventType.inputPolled)
+
 local frames = 0
 local sawMagic = false
 local readIndex = 0

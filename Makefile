@@ -220,7 +220,19 @@ mpyrepl: $(BUILD)/mpyrepl.sfc
 $(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
+# PPU text console + on-screen keyboard (REPL ROM only)
+$(MPBUILD)/font_tiles.c: snes/font8x8_basic.h tools/font2snes.py | $(GENHDR)
+	$(PYTHON) tools/font2snes.py $< $@
+
+$(MPBUILD)/font_tiles.o: $(MPBUILD)/font_tiles.c
+	$(CC) -o $@ $< $(CFLAGS)
+
+$(BUILD)/console.o $(BUILD)/oskb.o: snes/console.h
+
+CONSOLE_OBJS := $(BUILD)/console.o $(BUILD)/oskb.o $(MPBUILD)/font_tiles.o
+
+REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o \
+             $(CONSOLE_OBJS)
 
 $(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyrepl.map $(filter-out $(VMSTAMP),$^)

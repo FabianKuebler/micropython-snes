@@ -61,16 +61,20 @@ def lua_bytes(data):
     return "".join("\\%d" % b for b in data)
 
 
-def run_rom(rom, mesen_env, tmp_path, max_frames=1800, stdin_data=b""):
+def run_rom(rom, mesen_env, tmp_path, max_frames=1800, stdin_data=b"",
+            joypad=()):
     """Run a mailbox-protocol ROM under Mesen; return (exit_code, stdout_text).
 
     stdin_data is fed into the ROM's stdin ring by the harness (REPL input).
+    joypad is a per-frame button-name sequence for controller 1 ("" =
+    released); see mailbox_harness.lua.in.
     """
     log = tmp_path / "mailbox.log"
     lua = (HARNESS_LUA.read_text()
            .replace("@LOGFILE@", str(log))
            .replace("@MAXFRAMES@", str(max_frames))
-           .replace("@STDIN@", lua_bytes(stdin_data)))
+           .replace("@STDIN@", lua_bytes(stdin_data))
+           .replace("@JOYSEQ@", ",".join('"%s"' % b for b in joypad)))
     script = tmp_path / "harness.lua"
     script.write_text(lua)
     res = subprocess.run([MESEN, "--testrunner", str(rom), str(script)],
