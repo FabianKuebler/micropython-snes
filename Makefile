@@ -83,6 +83,20 @@ PY_SRC_NAMES := \
 
 PY_OBJS := $(addprefix $(MPBUILD)/py/,$(PY_SRC_NAMES:.c=.o))
 PORT_OBJS := $(MPBUILD)/main.o $(SNES_OBJS)
+
+# VM_SPLIT=1 replaces py/vm.c (one 21KB function both compilers miscompile
+# layout-sensitively, DECISIONS.md) with port/vm_split.c (one tiny function
+# per opcode, all VM state in a memory-resident struct).
+VM_SPLIT ?= 1
+ifeq ($(VM_SPLIT),1)
+PY_OBJS := $(filter-out $(MPBUILD)/py/vm.o,$(PY_OBJS))
+PORT_OBJS += $(MPBUILD)/vm_split.o
+endif
+# stamp encodes the flag so toggling VM_SPLIT forces a relink
+VMSTAMP := $(MPBUILD)/vmsel_$(VM_SPLIT).stamp
+$(VMSTAMP): | $(GENHDR)
+	rm -f $(MPBUILD)/vmsel_*.stamp
+	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
             $(PORT)/main.c
 
@@ -146,6 +160,9 @@ $(MPBUILD)/py/%.o: $(MPTOP)/py/%.c $(PORT)/mpconfigport.h | $(GENERATED)
 $(MPBUILD)/main.o: $(PORT)/main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
+$(MPBUILD)/vm_split.o: $(PORT)/vm_split.c $(PORT)/mpconfigport.h | $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
 # ---- frozen bytecode: host mpy-cross + mpy-tool ------------------------------
 
 MPY_CROSS := $(MPTOP)/mpy-cross/build/mpy-cross
@@ -163,8 +180,29 @@ $(MPBUILD)/frozen_content.c: $(MPBUILD)/main.mpy $(GENHDR)/qstrdefs.generated.h
 $(MPBUILD)/frozen_content.o: $(MPBUILD)/frozen_content.c
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-$(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content.o
-	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy.map $^
+$(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy.map
+
+# ---- M4: the decisive constructs (recursion, methods, classes, generators) --
+# Same ROM as mpy but freezing port/main_m4.py; needs the split VM to pass.
+
+.PHONY: mpy4
+mpy4: $(BUILD)/mpy4.sfc
+
+$(MPBUILD)/main_m4.mpy: $(PORT)/main_m4.py $(MPY_CROSS) | $(GENHDR)
+	$(MPY_CROSS) -o $@ -s main.py $<
+
+$(MPBUILD)/frozen_content_m4.c: $(MPBUILD)/main_m4.mpy $(GENHDR)/qstrdefs.generated.h
+	$(PYTHON) $(MPTOP)/tools/mpy-tool.py -f -q $(GENHDR)/qstrdefs.preprocessed.h \
+	  -mlongint-impl=none $< > $@
+
+$(MPBUILD)/frozen_content_m4.o: $(MPBUILD)/frozen_content_m4.c
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(BUILD)/mpy4.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_m4.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy4.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map
 
 clean:
 	rm -rf $(BUILD)

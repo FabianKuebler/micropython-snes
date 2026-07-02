@@ -1,5 +1,79 @@
 # Decisions log
 
+## 2026-07-02 — M4 GREEN: real root cause found (ROM object alignment), VM split shipped
+
+**The "layout-sensitive VM miscompile" was never (primarily) a code-gen bug.
+It was data alignment.** `MICROPY_OBJ_REPR_B` requires every object to sit at
+an even address (bit 0 is the small-int tag). Our port set
+`MICROPY_OBJ_BASE_ALIGNMENT __attribute__((aligned(2)))` on the
+`mp_obj_base_t` member — the documented ports/pic16bit trick — but **Calypsi
+silently ignores `aligned()` on struct members and struct types; it only
+honors it on variable definitions** (guide §11.7 describes data as unaligned
+by default; verified with .lst: member/type attribute emits no `.align`,
+variable-position attribute emits `.align 2`). So every ROM object
+(`mp_builtin_print_obj`, types, exception instances, frozen strings, module
+objects, …) had *random parity determined by layout*. Shift anything by an
+odd byte count → a different set of objects becomes odd → REPR_B misreads
+them as tagged small ints → the exact observed zoo: `TypeError: object not
+callable`, garbage exceptions, `NotImplementedError: opcode`, hangs — all
+"deterministic per layout, chaotic across layouts", on BOTH compilers (for
+vbcc the macro was defined empty, so its ROM objects were never aligned
+either). Every prior workaround (O-levels, volatile ip, stubbing, save/
+restore) merely re-rolled the parity dice — matching every recorded result.
+
+**Fix** (all in `patches/0001`, gitlink untouched):
+- `MICROPY_OBJ_BASE_ALIGNMENT` injected at *variable position* into every
+  ROM-object definition macro: `MP_DEFINE_CONST_FUN_OBJ_*`,
+  `MP_DEFINE_CONST_DICT_WITH_SIZE`, `MP_DEFINE_CONST_OBJ_TYPE_NARGS_*`,
+  `MP_DEFINE_CONST_{STATIC,CLASS}METHOD_OBJ`, `MP_DEFINE_STR_OBJ`,
+  `MP_DEFINE_ATTRTUPLE`, plus the direct definitions (none/bool/ellipsis/
+  NotImplemented singletons, empty tuple/bytes, `mp_const_GeneratorExit_obj`,
+  `mp_sys_*` tuples, all `mp_obj_module_t` instances) and `mpy-tool.py`'s
+  frozen `mp_obj_str_t`/int/float/complex/tuple emissions.
+- **Safety net:** `tools/check_obj_align.py` parses the link map and FAILS
+  the build if any object symbol is odd (runs automatically after every mpy
+  link; 131 symbols checked; static frozen objects are covered by the
+  mpy-tool patch but invisible to the map). Never trust parity to luck again.
+
+**VM split** (`port/vm_split.c`, `VM_SPLIT=1` default in Makefile): the
+per-op decomposition of `mp_execute_bytecode` was built anyway — one tiny
+handler function per opcode dispatched via a 256-entry table, ALL VM state
+(ip/sp/exc_sp/…) in a `vm_ctx_t` accessed only through a pointer, the
+setjmp-containing function (`vm_run`) keeps zero mutable locals (immune to
+Calypsi bug 2), shared labels became status-code helpers. `py/vm.c` is not
+compiled at all when VM_SPLIT=1 (it only contains `mp_execute_bytecode`), so
+no submodule patch was needed. Logic was validated on host first (unix port
+minimal variant with vm.c swapped for vm_split.c — both test programs
+byte-perfect), which cleanly separated "transformation bug" from "Calypsi
+bug" during bring-up.
+
+**Is the split needed, or was alignment everything?** Controlled test: with
+the alignment fix, the ORIGINAL monolithic vm.c (VM_SPLIT=0) runs recursion,
+mutual recursion, list methods, str methods, dicts, classes, closures and
+generators correctly — but **hangs in the nested try/finally + cross-frame
+exception test** (exit 99). That residue is consistent with Calypsi bug 2
+(volatile-auto stores dropped in setjmp functions — vm.c keeps `exc_sp` in a
+volatile stack local of the setjmp function). The split VM passes everything.
+So: alignment was ~95% of the mystery; the split dodges the remaining
+setjmp-function fragility by construction. VM_SPLIT=1 stays default.
+
+**Verification** (all in Mesen, byte-for-byte):
+- `pytest tests/` 4/4: M0 hello, M1 selftest, M3 mpy, **new M4**
+  (`tests/test_m4.py` / `port/main_m4.py` / `make mpy4`): fact(10)=3628800,
+  mutual recursion, list iteration+append+len, ",".join, .lower, dict
+  store/load, class with `__init__`+method+attribute, closure, generator
+  loop, nested try/finally with exception across a Python call frame.
+- **Layout-perturbation robustness** — the bar every earlier "fix" failed:
+  pad objects of 1, 3, 17 and 257 bytes linked ahead of everything shift the
+  whole image by odd amounts; all four perturbed M4 ROMs PASS byte-perfect
+  and `check_obj_align` stays clean in each.
+
+Follow-ups: report the member-alignment silent-ignore to Calypsi upstream
+(hth313); vbcc ROM objects are still unaligned (macro empty under `__VBCC__`
+— vbcc rejects the attribute syntax; find its alignment mechanism if the
+vbcc path is ever revived); consider upstreaming a REPR_B alignment note to
+MicroPython for compilers without member-alignment support.
+
 ## 2026-06-13 — `volatile ip` (the per-op-split core mechanism) only shuffles
 
 Tested the per-op-split hypothesis the cheap way BEFORE building the split:

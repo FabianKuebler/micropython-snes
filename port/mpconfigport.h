@@ -3,9 +3,16 @@
 // Target facts that shape everything here (see DECISIONS.md):
 //  - int is 16-bit, long/void*/intptr_t are 32-bit, size_t is 16-bit
 //  - the compiler imposes NO data alignment, so tagged mp_obj_t pointers
-//    need MICROPY_OBJ_REPR_B (only bit 0 must be clear) plus a forced
-//    2-byte alignment on mp_obj_base_t — same trick as ports/pic16bit,
-//    whose xc16 compiler has the same quirk
+//    need MICROPY_OBJ_REPR_B (only bit 0 must be clear) plus 2-byte
+//    alignment on every object definition. CRITICAL (root cause of the
+//    long M4 hunt): Calypsi honors __attribute__((aligned)) ONLY at
+//    variable position (guide 11.7); on struct members/types it is
+//    silently ignored, so the ports/pic16bit trick of aligning
+//    mp_obj_base_t does nothing here. The patches in patches/ therefore
+//    put MICROPY_OBJ_BASE_ALIGNMENT at variable position inside every
+//    ROM-object definition macro (MP_DEFINE_CONST_*, MP_DEFINE_STR_OBJ,
+//    module/singleton definitions, mpy-tool.py frozen objects), and
+//    tools/check_obj_align.py fails the link if any object lands odd.
 //  - far pointers cannot cross 64K banks: the GC heap lives entirely in
 //    WRAM bank $7F
 #ifndef MICROPY_INCLUDED_MPCONFIGPORT_H

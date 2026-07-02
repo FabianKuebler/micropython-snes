@@ -255,10 +255,268 @@ index a9c02a4dd..2a0b8f921 100644
  #else
  static inline bool mp_sub_ll_overflow(long long int lhs, long long int rhs, long long int *res) {
      bool overflow;
+diff --git a/py/modarray.c b/py/modarray.c
+index 116c844e8..1fe9288be 100644
+--- a/py/modarray.c
++++ b/py/modarray.c
+@@ -35,7 +35,7 @@ static const mp_rom_map_elem_t mp_module_array_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_array_globals, mp_module_array_globals_table);
+ 
+-const mp_obj_module_t mp_module_array = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_array = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_array_globals,
+ };
+diff --git a/py/modbuiltins.c b/py/modbuiltins.c
+index 6f085f2df..13c6d190c 100644
+--- a/py/modbuiltins.c
++++ b/py/modbuiltins.c
+@@ -771,7 +771,7 @@ static const mp_rom_map_elem_t mp_module_builtins_globals_table[] = {
+ 
+ MP_DEFINE_CONST_DICT(mp_module_builtins_globals, mp_module_builtins_globals_table);
+ 
+-const mp_obj_module_t mp_module_builtins = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_builtins = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_builtins_globals,
+ };
+diff --git a/py/modcmath.c b/py/modcmath.c
+index 33cb00cbe..62b484aa3 100644
+--- a/py/modcmath.c
++++ b/py/modcmath.c
+@@ -144,7 +144,7 @@ static const mp_rom_map_elem_t mp_module_cmath_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_cmath_globals, mp_module_cmath_globals_table);
+ 
+-const mp_obj_module_t mp_module_cmath = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_cmath = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_cmath_globals,
+ };
+diff --git a/py/modcollections.c b/py/modcollections.c
+index 46326d13e..623cb7284 100644
+--- a/py/modcollections.c
++++ b/py/modcollections.c
+@@ -41,7 +41,7 @@ static const mp_rom_map_elem_t mp_module_collections_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_collections_globals, mp_module_collections_globals_table);
+ 
+-const mp_obj_module_t mp_module_collections = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_collections = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_collections_globals,
+ };
+diff --git a/py/moderrno.c b/py/moderrno.c
+index 58a141c10..d7a6ee4ce 100644
+--- a/py/moderrno.c
++++ b/py/moderrno.c
+@@ -94,7 +94,7 @@ static const mp_rom_map_elem_t mp_module_errno_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_errno_globals, mp_module_errno_globals_table);
+ 
+-const mp_obj_module_t mp_module_errno = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_errno = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_errno_globals,
+ };
+diff --git a/py/modgc.c b/py/modgc.c
+index 47902d8c9..99c4a2285 100644
+--- a/py/modgc.c
++++ b/py/modgc.c
+@@ -115,7 +115,7 @@ static const mp_rom_map_elem_t mp_module_gc_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_gc_globals, mp_module_gc_globals_table);
+ 
+-const mp_obj_module_t mp_module_gc = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_gc = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_gc_globals,
+ };
+diff --git a/py/modio.c b/py/modio.c
+index 9aeb42d30..8444f384c 100644
+--- a/py/modio.c
++++ b/py/modio.c
+@@ -222,7 +222,7 @@ static const mp_rom_map_elem_t mp_module_io_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_io_globals, mp_module_io_globals_table);
+ 
+-const mp_obj_module_t mp_module_io = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_io = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_io_globals,
+ };
+diff --git a/py/modmath.c b/py/modmath.c
+index 045c84215..124e0e691 100644
+--- a/py/modmath.c
++++ b/py/modmath.c
+@@ -449,7 +449,7 @@ static const mp_rom_map_elem_t mp_module_math_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_math_globals, mp_module_math_globals_table);
+ 
+-const mp_obj_module_t mp_module_math = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_math = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_math_globals,
+ };
+diff --git a/py/modmicropython.c b/py/modmicropython.c
+index 4d676cb4a..3fb469eb8 100644
+--- a/py/modmicropython.c
++++ b/py/modmicropython.c
+@@ -210,7 +210,7 @@ static const mp_rom_map_elem_t mp_module_micropython_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_micropython_globals, mp_module_micropython_globals_table);
+ 
+-const mp_obj_module_t mp_module_micropython = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_micropython = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_micropython_globals,
+ };
+diff --git a/py/modstring.c b/py/modstring.c
+index 26e0c2d83..12b562f0c 100644
+--- a/py/modstring.c
++++ b/py/modstring.c
+@@ -46,7 +46,7 @@ static const mp_rom_map_elem_t mp_module_string_globals_table[] = {
+ };
+ static MP_DEFINE_CONST_DICT(mp_module_string_globals, mp_module_string_globals_table);
+ 
+-const mp_obj_module_t mp_module_string = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_string = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_string_globals,
+ };
+diff --git a/py/modstruct.c b/py/modstruct.c
+index 3b9dd30aa..0bf0dd259 100644
+--- a/py/modstruct.c
++++ b/py/modstruct.c
+@@ -268,7 +268,7 @@ static const mp_rom_map_elem_t mp_module_struct_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_struct_globals, mp_module_struct_globals_table);
+ 
+-const mp_obj_module_t mp_module_struct = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_struct = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_struct_globals,
+ };
+diff --git a/py/modsys.c b/py/modsys.c
+index 3dae92681..9b4b589e8 100644
+--- a/py/modsys.c
++++ b/py/modsys.c
+@@ -60,11 +60,11 @@ static const MP_DEFINE_STR_OBJ(mp_sys_version_obj, "3.4.0; " MICROPY_BANNER_NAME
+ 
+ // version_info - Python language version that this implementation conforms to, as a tuple of ints
+ // TODO: CPython is now at 5-element array (major, minor, micro, releaselevel, serial), but save 2 els so far...
+-static const mp_rom_obj_tuple_t mp_sys_version_info_obj = {{&mp_type_tuple}, 3, {MP_ROM_INT(3), MP_ROM_INT(4), MP_ROM_INT(0)}};
++static const mp_rom_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT mp_sys_version_info_obj = {{&mp_type_tuple}, 3, {MP_ROM_INT(3), MP_ROM_INT(4), MP_ROM_INT(0)}};
+ 
+ // sys.implementation object
+ // this holds the MicroPython version
+-static const mp_rom_obj_tuple_t mp_sys_implementation_version_info_obj = {
++static const mp_rom_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT mp_sys_implementation_version_info_obj = {
+     {&mp_type_tuple},
+     4,
+     {
+@@ -158,7 +158,7 @@ static MP_DEFINE_ATTRTUPLE(
+     SYS_IMPLEMENTATION_ELEMS__V2
+     );
+ #else
+-static const mp_rom_obj_tuple_t mp_sys_implementation_obj = {
++static const mp_rom_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT mp_sys_implementation_obj = {
+     {&mp_type_tuple},
+     3 + MICROPY_PERSISTENT_CODE_LOAD,
+     // Do not include SYS_IMPLEMENTATION_ELEMS__BUILD, SYS_IMPLEMENTATION_ELEMS__THREAD
+@@ -380,7 +380,7 @@ static const mp_rom_map_elem_t mp_module_sys_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_sys_globals, mp_module_sys_globals_table);
+ 
+-const mp_obj_module_t mp_module_sys = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_sys = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_sys_globals,
+ };
+diff --git a/py/modthread.c b/py/modthread.c
+index 7742ff684..378d30475 100644
+--- a/py/modthread.c
++++ b/py/modthread.c
+@@ -281,7 +281,7 @@ static const mp_rom_map_elem_t mp_module_thread_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(mp_module_thread_globals, mp_module_thread_globals_table);
+ 
+-const mp_obj_module_t mp_module_thread = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_thread = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_thread_globals,
+ };
+diff --git a/py/modweakref.c b/py/modweakref.c
+index 3360a4e20..ca327a998 100644
+--- a/py/modweakref.c
++++ b/py/modweakref.c
+@@ -303,7 +303,7 @@ static const mp_rom_map_elem_t mp_module_weakref_globals_table[] = {
+ };
+ static MP_DEFINE_CONST_DICT(mp_module_weakref_globals, mp_module_weakref_globals_table);
+ 
+-const mp_obj_module_t mp_module_weakref = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_weakref = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&mp_module_weakref_globals,
+ };
 diff --git a/py/obj.h b/py/obj.h
-index 3c9122a69..bc103b329 100644
+index 3c9122a69..bb28cfa51 100644
 --- a/py/obj.h
 +++ b/py/obj.h
+@@ -388,25 +388,25 @@ typedef struct _mp_rom_obj_t { mp_const_obj_t o; } mp_rom_obj_t;
+ #define MP_OBJ_FUN_MAKE_SIG(n_args_min, n_args_max, takes_kw) ((uint32_t)((((uint32_t)(n_args_min)) << 17) | (((uint32_t)(n_args_max)) << 1) | ((takes_kw) ? 1 : 0)))
+ 
+ #define MP_DEFINE_CONST_FUN_OBJ_0(obj_name, fun_name) \
+-    const mp_obj_fun_builtin_fixed_t obj_name = \
++    const mp_obj_fun_builtin_fixed_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_0}, .fun = {._0 = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_1(obj_name, fun_name) \
+-    const mp_obj_fun_builtin_fixed_t obj_name = \
++    const mp_obj_fun_builtin_fixed_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_1}, .fun = {._1 = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_2(obj_name, fun_name) \
+-    const mp_obj_fun_builtin_fixed_t obj_name = \
++    const mp_obj_fun_builtin_fixed_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_2}, .fun = {._2 = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_3(obj_name, fun_name) \
+-    const mp_obj_fun_builtin_fixed_t obj_name = \
++    const mp_obj_fun_builtin_fixed_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_3}, .fun = {._3 = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_VAR(obj_name, n_args_min, fun_name) \
+-    const mp_obj_fun_builtin_var_t obj_name = \
++    const mp_obj_fun_builtin_var_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_var}, .sig = MP_OBJ_FUN_MAKE_SIG(n_args_min, MP_OBJ_FUN_ARGS_MAX, false), .fun = {.var = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(obj_name, n_args_min, n_args_max, fun_name) \
+-    const mp_obj_fun_builtin_var_t obj_name = \
++    const mp_obj_fun_builtin_var_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_var}, .sig = MP_OBJ_FUN_MAKE_SIG(n_args_min, n_args_max, false), .fun = {.var = fun_name}}
+ #define MP_DEFINE_CONST_FUN_OBJ_KW(obj_name, n_args_min, fun_name) \
+-    const mp_obj_fun_builtin_var_t obj_name = \
++    const mp_obj_fun_builtin_var_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = \
+     {.base = {.type = &mp_type_fun_builtin_var}, .sig = MP_OBJ_FUN_MAKE_SIG(n_args_min, MP_OBJ_FUN_ARGS_MAX, true), .fun = {.kw = fun_name}}
+ 
+ // These macros are used to define constant map/dict objects
+@@ -423,7 +423,7 @@ typedef struct _mp_rom_obj_t { mp_const_obj_t o; } mp_rom_obj_t;
+     }
+ 
+ #define MP_DEFINE_CONST_DICT_WITH_SIZE(dict_name, table_name, n) \
+-    const mp_obj_dict_t dict_name = { \
++    const mp_obj_dict_t MICROPY_OBJ_BASE_ALIGNMENT dict_name = { \
+         .base = {&mp_type_dict}, \
+         .map = { \
+             .all_keys_are_qstrs = 1, \
+@@ -443,8 +443,8 @@ typedef struct _mp_rom_obj_t { mp_const_obj_t o; } mp_rom_obj_t;
+ #define MP_DECLARE_CONST_STATICMETHOD_OBJ(obj_name) extern const mp_rom_obj_static_class_method_t obj_name
+ #define MP_DECLARE_CONST_CLASSMETHOD_OBJ(obj_name) extern const mp_rom_obj_static_class_method_t obj_name
+ 
+-#define MP_DEFINE_CONST_STATICMETHOD_OBJ(obj_name, fun_name) const mp_rom_obj_static_class_method_t obj_name = {{&mp_type_staticmethod}, fun_name}
+-#define MP_DEFINE_CONST_CLASSMETHOD_OBJ(obj_name, fun_name) const mp_rom_obj_static_class_method_t obj_name = {{&mp_type_classmethod}, fun_name}
++#define MP_DEFINE_CONST_STATICMETHOD_OBJ(obj_name, fun_name) const mp_rom_obj_static_class_method_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = {{&mp_type_staticmethod}, fun_name}
++#define MP_DEFINE_CONST_CLASSMETHOD_OBJ(obj_name, fun_name) const mp_rom_obj_static_class_method_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = {{&mp_type_classmethod}, fun_name}
+ 
+ #ifndef NO_QSTR
+ 
 @@ -713,7 +713,15 @@ struct _mp_obj_type_t {
      // A dict mapping qstrs to objects local methods/constants/etc.
      uint8_t slot_index_locals_dict;
@@ -275,6 +533,41 @@ index 3c9122a69..bc103b329 100644
  };
  
  // Non-variable sized versions of mp_obj_type_t to be used as a member
+@@ -780,20 +788,20 @@ typedef struct _mp_obj_full_type_t {
+ // Do not use these directly, instead use MP_DEFINE_CONST_OBJ_TYPE.
+ // Generated with:
+ // for i in range(13):
+-//     print(f"#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_{i}(_struct_type, _typename, _name, _flags{''.join(f', f{j+1}, v{j+1}' for j in range(i))}) const _struct_type _typename = {{ .base = {{ &mp_type_type }}, .flags = _flags, .name = _name{''.join(f', .slot_index_##f{j+1} = {j+1}' for j in range(i))}{', .slots = { ' + ''.join(f'v{j+1}, ' for j in range(i)) + '}' if i else '' } }}")
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_0(_struct_type, _typename, _name, _flags) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_1(_struct_type, _typename, _name, _flags, f1, v1) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slots = { v1, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_2(_struct_type, _typename, _name, _flags, f1, v1, f2, v2) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slots = { v1, v2, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_3(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slots = { v1, v2, v3, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_4(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slots = { v1, v2, v3, v4, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_5(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slots = { v1, v2, v3, v4, v5, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_6(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slots = { v1, v2, v3, v4, v5, v6, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_7(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slots = { v1, v2, v3, v4, v5, v6, v7, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_8(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_9(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_10(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_11(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10, f11, v11) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slot_index_##f11 = 11, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, } }
+-#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_12(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10, f11, v11, f12, v12) const _struct_type _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slot_index_##f11 = 11, .slot_index_##f12 = 12, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, } }
++//     print(f"#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_{i}(_struct_type, _typename, _name, _flags{''.join(f', f{j+1}, v{j+1}' for j in range(i))}) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = {{ .base = {{ &mp_type_type }}, .flags = _flags, .name = _name{''.join(f', .slot_index_##f{j+1} = {j+1}' for j in range(i))}{', .slots = { ' + ''.join(f'v{j+1}, ' for j in range(i)) + '}' if i else '' } }}")
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_0(_struct_type, _typename, _name, _flags) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_1(_struct_type, _typename, _name, _flags, f1, v1) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slots = { v1, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_2(_struct_type, _typename, _name, _flags, f1, v1, f2, v2) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slots = { v1, v2, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_3(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slots = { v1, v2, v3, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_4(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slots = { v1, v2, v3, v4, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_5(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slots = { v1, v2, v3, v4, v5, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_6(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slots = { v1, v2, v3, v4, v5, v6, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_7(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slots = { v1, v2, v3, v4, v5, v6, v7, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_8(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_9(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_10(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_11(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10, f11, v11) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slot_index_##f11 = 11, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, } }
++#define MP_DEFINE_CONST_OBJ_TYPE_NARGS_12(_struct_type, _typename, _name, _flags, f1, v1, f2, v2, f3, v3, f4, v4, f5, v5, f6, v6, f7, v7, f8, v8, f9, v9, f10, v10, f11, v11, f12, v12) const _struct_type MICROPY_OBJ_BASE_ALIGNMENT _typename = { .base = { &mp_type_type }, .flags = _flags, .name = _name, .slot_index_##f1 = 1, .slot_index_##f2 = 2, .slot_index_##f3 = 3, .slot_index_##f4 = 4, .slot_index_##f5 = 5, .slot_index_##f6 = 6, .slot_index_##f7 = 7, .slot_index_##f8 = 8, .slot_index_##f9 = 9, .slot_index_##f10 = 10, .slot_index_##f11 = 11, .slot_index_##f12 = 12, .slots = { v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, } }
+ 
+ // Because the mp_obj_type_t instances are in (zero-initialised) ROM, we take
+ // slot_index_foo=0 to mean that the slot is unset. This also simplifies checking
 @@ -822,7 +830,11 @@ typedef struct _mp_obj_full_type_t {
  // numeric values 12, 11, ... 0 by the number of arguments, such that the
  // 29th argument ends up being the number to use. The _INV values are
@@ -288,6 +581,32 @@ index 3c9122a69..bc103b329 100644
  
  // Constant types, globally accessible
  extern const mp_obj_type_t mp_type_type;
+diff --git a/py/objbool.c b/py/objbool.c
+index 5b3e3660e..f460d763b 100644
+--- a/py/objbool.c
++++ b/py/objbool.c
+@@ -96,6 +96,6 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     );
+ 
+ #if !MICROPY_OBJ_IMMEDIATE_OBJS
+-const mp_obj_bool_t mp_const_false_obj = {{&mp_type_bool}, false};
+-const mp_obj_bool_t mp_const_true_obj = {{&mp_type_bool}, true};
++const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_false_obj = {{&mp_type_bool}, false};
++const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_true_obj = {{&mp_type_bool}, true};
+ #endif
+diff --git a/py/objgenerator.c b/py/objgenerator.c
+index a0cee5d48..895bbb590 100644
+--- a/py/objgenerator.c
++++ b/py/objgenerator.c
+@@ -36,7 +36,7 @@
+ #include "py/cstack.h"
+ 
+ // Instance of GeneratorExit exception - needed by generator.close()
+-const mp_obj_exception_t mp_const_GeneratorExit_obj = {{&mp_type_GeneratorExit}, 0, 0, NULL, (mp_obj_tuple_t *)&mp_const_empty_tuple_obj};
++const mp_obj_exception_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_GeneratorExit_obj = {{&mp_type_GeneratorExit}, 0, 0, NULL, (mp_obj_tuple_t *)&mp_const_empty_tuple_obj};
+ 
+ /******************************************************************************/
+ /* generator wrapper                                                          */
 diff --git a/py/objlist.c b/py/objlist.c
 index 41c920511..c26e1db91 100644
 --- a/py/objlist.c
@@ -301,10 +620,44 @@ index 41c920511..c26e1db91 100644
      assert(sizeof(mp_obj_list_it_t) <= sizeof(mp_obj_iter_buf_t));
      mp_obj_list_it_t *o = (mp_obj_list_it_t *)iter_buf;
      o->base.type = &mp_type_polymorph_iter;
+diff --git a/py/objnone.c b/py/objnone.c
+index a8ce8ebfe..635f41137 100644
+--- a/py/objnone.c
++++ b/py/objnone.c
+@@ -51,5 +51,5 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     );
+ 
+ #if !MICROPY_OBJ_IMMEDIATE_OBJS
+-const mp_obj_none_t mp_const_none_obj = {{&mp_type_NoneType}};
++const mp_obj_none_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_none_obj = {{&mp_type_NoneType}};
+ #endif
+diff --git a/py/objsingleton.c b/py/objsingleton.c
+index c1f102c94..0b3a983f4 100644
+--- a/py/objsingleton.c
++++ b/py/objsingleton.c
+@@ -48,7 +48,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     print, singleton_print
+     );
+ 
+-const mp_obj_singleton_t mp_const_ellipsis_obj = {{&mp_type_singleton}, MP_QSTR_Ellipsis};
++const mp_obj_singleton_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_ellipsis_obj = {{&mp_type_singleton}, MP_QSTR_Ellipsis};
+ #if MICROPY_PY_BUILTINS_NOTIMPLEMENTED
+-const mp_obj_singleton_t mp_const_notimplemented_obj = {{&mp_type_singleton}, MP_QSTR_NotImplemented};
++const mp_obj_singleton_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_notimplemented_obj = {{&mp_type_singleton}, MP_QSTR_NotImplemented};
+ #endif
 diff --git a/py/objstr.c b/py/objstr.c
-index e8b2512a2..491d850e3 100644
+index e8b2512a2..7a56a5330 100644
 --- a/py/objstr.c
 +++ b/py/objstr.c
+@@ -2208,7 +2208,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     );
+ 
+ // The zero-length bytes object, with data that includes a null-terminating byte
+-const mp_obj_str_t mp_const_empty_bytes_obj = {{&mp_type_bytes}, 0, 0, (const byte *)""};
++const mp_obj_str_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_empty_bytes_obj = {{&mp_type_bytes}, 0, 0, (const byte *)""};
+ 
+ // Create a str/bytes object using the given data.  New memory is allocated and
+ // the data is copied across.  This function should only be used if the type is bytes,
 @@ -2459,7 +2459,7 @@ static mp_obj_t bytes_it_iternext(mp_obj_t self_in) {
      }
  }
@@ -314,8 +667,34 @@ index e8b2512a2..491d850e3 100644
      assert(sizeof(mp_obj_str8_it_t) <= sizeof(mp_obj_iter_buf_t));
      mp_obj_str8_it_t *o = (mp_obj_str8_it_t *)iter_buf;
      o->base.type = &mp_type_polymorph_iter;
+diff --git a/py/objstr.h b/py/objstr.h
+index 028fc9597..ac5678ee6 100644
+--- a/py/objstr.h
++++ b/py/objstr.h
+@@ -44,7 +44,7 @@ typedef struct _mp_obj_str_t {
+     MP_STATIC_ASSERT(offsetof(mp_obj_str_t, len) == offsetof(mp_obj_array_t, len) \
+     && offsetof(mp_obj_str_t, data) == offsetof(mp_obj_array_t, items))
+ 
+-#define MP_DEFINE_STR_OBJ(obj_name, str) mp_obj_str_t obj_name = {{&mp_type_str}, 0, sizeof(str) - 1, (const byte *)str}
++#define MP_DEFINE_STR_OBJ(obj_name, str) mp_obj_str_t MICROPY_OBJ_BASE_ALIGNMENT obj_name = {{&mp_type_str}, 0, sizeof(str) - 1, (const byte *)str}
+ 
+ // use this macro to extract the string hash
+ // warning: the hash can be 0, meaning invalid, and must then be explicitly computed from the data
+diff --git a/py/objtuple.c b/py/objtuple.c
+index c9d8e9b31..5ef555232 100644
+--- a/py/objtuple.c
++++ b/py/objtuple.c
+@@ -235,7 +235,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     );
+ 
+ // the zero-length tuple
+-const mp_obj_tuple_t mp_const_empty_tuple_obj = {{&mp_type_tuple}, 0};
++const mp_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_empty_tuple_obj = {{&mp_type_tuple}, 0};
+ 
+ mp_obj_t mp_obj_new_tuple(size_t n, const mp_obj_t *items) {
+     if (n == 0) {
 diff --git a/py/objtuple.h b/py/objtuple.h
-index 892c5771b..ad63349a2 100644
+index 892c5771b..132de94f2 100644
 --- a/py/objtuple.h
 +++ b/py/objtuple.h
 @@ -31,16 +31,28 @@
@@ -349,6 +728,15 @@ index 892c5771b..ad63349a2 100644
  } mp_rom_obj_tuple_t;
  
  void mp_obj_tuple_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind);
+@@ -59,7 +71,7 @@ static inline void mp_obj_tuple_get(mp_obj_t self_in, size_t *len, mp_obj_t **it
+ extern const mp_obj_type_t mp_type_attrtuple;
+ 
+ #define MP_DEFINE_ATTRTUPLE(tuple_obj_name, fields, nitems, ...) \
+-    const mp_rom_obj_tuple_t tuple_obj_name = { \
++    const mp_rom_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT tuple_obj_name = { \
+         .base = {.type = &mp_type_attrtuple}, \
+         .len = nitems, \
+         .items = { __VA_ARGS__, MP_ROM_PTR((void *)fields) } \
 diff --git a/py/qstr.c b/py/qstr.c
 index 7902646a9..e9d395715 100644
 --- a/py/qstr.c
@@ -454,6 +842,19 @@ index 0cde6062e..150080554 100644
  } qstr_pool_t;
  
  #define QSTR_TOTAL() (MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len)
+diff --git a/py/runtime.c b/py/runtime.c
+index 618e9b5ae..72d5d53a1 100644
+--- a/py/runtime.c
++++ b/py/runtime.c
+@@ -59,7 +59,7 @@
+ #define DEBUG_OP_printf(...) (void)0
+ #endif
+ 
+-const mp_obj_module_t mp_module___main__ = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module___main__ = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&MP_STATE_VM(dict_main),
+ };
 diff --git a/py/runtime_utils.c b/py/runtime_utils.c
 index 3b0ae279a..96786c970 100644
 --- a/py/runtime_utils.c
@@ -477,9 +878,63 @@ index 3b0ae279a..96786c970 100644
  bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *res) {
      // Check for multiply overflow; see CERT INT32-C
 diff --git a/tools/mpy-tool.py b/tools/mpy-tool.py
-index 67e2cbf15..2f2b456c2 100755
+index 67e2cbf15..d57fd5afa 100755
 --- a/tools/mpy-tool.py
 +++ b/tools/mpy-tool.py
+@@ -745,7 +745,7 @@ class CompiledModule:
+             else:
+                 obj_type = "mp_type_bytes"
+             print(
+-                'static const mp_obj_str_t %s = {{&%s}, %u, %u, (const byte*)"%s"};'
++                'static const mp_obj_str_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&%s}, %u, %u, (const byte*)"%s"};'
+                 % (
+                     obj_name,
+                     obj_type,
+@@ -764,7 +764,7 @@ class CompiledModule:
+             elif config.MICROPY_LONGINT_IMPL == config.MICROPY_LONGINT_IMPL_NONE:
+                 raise FreezeError(self, "target does not support long int")
+             elif config.MICROPY_LONGINT_IMPL == config.MICROPY_LONGINT_IMPL_LONGLONG:
+-                print("static const mp_obj_int_t %s = {{&mp_type_int}, %d};" % (obj_name, obj))
++                print("static const mp_obj_int_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&mp_type_int}, %d};" % (obj_name, obj))
+                 return "MP_ROM_PTR(&%s)" % obj_name
+             elif config.MICROPY_LONGINT_IMPL == config.MICROPY_LONGINT_IMPL_MPZ:
+                 neg = 0
+@@ -780,7 +780,7 @@ class CompiledModule:
+                 ndigs = len(digs)
+                 digs = ",".join(("%#x" % d) for d in digs)
+                 print(
+-                    "static const mp_obj_int_t %s = {{&mp_type_int}, "
++                    "static const mp_obj_int_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&mp_type_int}, "
+                     "{.neg=%u, .fixed_dig=1, .alloc=%u, .len=%u, .dig=(uint%u_t*)(const uint%u_t[]){%s}}};"
+                     % (obj_name, neg, ndigs, ndigs, bits_per_dig, bits_per_dig, digs)
+                 )
+@@ -793,7 +793,7 @@ class CompiledModule:
+                 "#if MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_A || MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_B"
+             )
+             print(
+-                "static const mp_obj_float_t %s = {{&mp_type_float}, (mp_float_t)%.16g};"
++                "static const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&mp_type_float}, (mp_float_t)%.16g};"
+                 % (obj_name, obj)
+             )
+             print("#define %s MP_ROM_PTR(&%s)" % (macro_name, obj_name))
+@@ -810,7 +810,7 @@ class CompiledModule:
+             return macro_name
+         elif isinstance(obj, complex):
+             print(
+-                "static const mp_obj_complex_t %s = {{&mp_type_complex}, (mp_float_t)%.16g, (mp_float_t)%.16g};"
++                "static const mp_obj_complex_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&mp_type_complex}, (mp_float_t)%.16g, (mp_float_t)%.16g};"
+                 % (obj_name, obj.real, obj.imag)
+             )
+             return "MP_ROM_PTR(&%s)" % obj_name
+@@ -823,7 +823,7 @@ class CompiledModule:
+                     sub_obj_name = "%s_%u" % (obj_name, i)
+                     obj_refs.append(self.freeze_constant_obj(sub_obj_name, sub_obj))
+                 print(
+-                    "static const mp_rom_obj_tuple_t %s = {{&mp_type_tuple}, %d, {"
++                    "static const mp_rom_obj_tuple_t MICROPY_OBJ_BASE_ALIGNMENT %s = {{&mp_type_tuple}, %d, {"
+                     % (obj_name, len(obj))
+                 )
+                 for ref in obj_refs:
 @@ -1676,6 +1676,11 @@ def freeze_mpy(firmware_qstr_idents, compiled_modules):
          qstr_content += len(qbytes) + 1  # include NUL
      print("};")
