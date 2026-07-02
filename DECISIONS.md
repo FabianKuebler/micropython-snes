@@ -1,5 +1,94 @@
 # Decisions log
 
+## 2026-07-03 — WIP: nano-gui groundwork — a compiler-bug safari (5/6 green)
+
+Goal: run peterhinch/micropython-nano-gui. Status: the Python side runs
+VERBATIM on the host testbed; on target the demo boots deep into nano-gui
+(imports, color LUT setup) before hitting one remaining VM/runtime landmine.
+pytest 5/6 (test_m4 red, same landmine — see OPEN below). This entry records
+an extraordinary chain of root-caused Calypsi 65816 bugs, each with a
+minimal reproducer methodology (REPL sessions as probes, pure-C probe ROMs
+linked against real build objects, Mesen Lua write/exec traps + PC sampling
+with map-file symbolization).
+
+Infrastructure added:
+- `port/modsnesfb.c`: mode-1 4bpp 256x192 unique-tile framebuffer module
+  (init/show/palette/vsync); GS4_HMSB nibbles -> bitplanes in a 24KB WRAM
+  staging buffer -> vblank-chunked DMA. Linked into every ROM.
+- `port/pylib/`: vendored nano-gui subset (MIT; one documented deviation:
+  writer.py falls back to copying glyphs when uctypes is absent) + our
+  `color_setup.py` (SSD driver: nano-gui's 4-bit LUT model maps 1:1 onto
+  SNES CGRAM). `make mpygui` freezes the whole package tree (mpy-cross -s
+  with package-relative names); the REPL ROM now freezes it too, so the GUI
+  is importable interactively.
+- Config: CORE_FEATURES ROM level (slice/property/enumerate/str.format...,
+  MICROPY_PY_IO=0), EXTERNAL_IMPORT=1 (frozen packages; mp_import_stat
+  stubs), complex+cmath. main.c now runs frozen main via mp_import_name
+  (the direct proto_fun path miscompiled in some ROM layouts; the importer
+  path is exercised by every frozen package import and proven).
+- Host testbed recipe: unix minimal + CFLAGS mirroring the port config runs
+  the vendored tree unmodified — validates Python-side before target work.
+
+Calypsi bugs found & fixed this session (all fixes in patches/0001):
+1. **gc_setup_area received `end` with the bank byte stripped** — the THIRD
+   pointer parameter of the call lost its top half in marshalling (cousin of
+   the M1 varargs bug). pool_start/pool_end were therefore bank-0 pointers;
+   every allocation > ~3KB (first-fit reaching fresh pool area... in truth
+   ALL allocations were handed bank-0 addresses whenever this codegen
+   variant was active) zero-filled the C STACK -> wild jumps into ROM
+   padding/zeroed RAM. Symptom history: bytearray(4000) hangs, layout-
+   dependent. Fix: derive pool pointers from `start` (arrives intact) plus
+   scalar offsets; `end` is only used for the length. Found via a 30-line
+   probe ROM linking the real gc.o; proven by byte-level field dumps.
+   NB: codegen varies per FILE COMPILATION — the same function compiled
+   correctly for months, then my unrelated edits elsewhere in gc.c flipped
+   it. Trust nothing; test behavior.
+2. **gc root scan missed roots**: mp_state's root-pointer section contains
+   pointers at 2-mod-4 offsets (packed structs, 16-bit size_t), and
+   upstream's `ptrs + root_start / sizeof(void *)` also truncates. Fix:
+   byte-exact base + a phase-shifted second scan behind new config
+   `MICROPY_GC_UNALIGNED_ROOT_SECTION` (over-marking is safe for a
+   conservative GC). Symptom: gc.collect() erased live globals.
+3. **gc_alloc split** (gc_alloc_attempt called via a VOLATILE function
+   pointer — Calypsi ignores noinline like it ignores noreturn): each
+   attempt re-derives all state so nothing is cached across the internal
+   gc_collect() call (vm_split philosophy). Defensive after seeing stale
+   `_Dp`-cached pointers around that call shape.
+4. **mp_obj_array_t bitfields de-bitfielded** (size_t typecode:8/free:8):
+   Calypsi miscompiles bitfield RMW (established M5-era with
+   mp_float_union_t); also free:8 could only count 255 spare elements with
+   16-bit size_t. memoryview offset limit lifted accordingly.
+5. **Stack-allocated mp_obj structs can be ODD** (no stack alignment!) —
+   zero-arg super() built mp_obj_super_t on the C stack; at odd addresses
+   REPR_B read it as a small int ("'int' object has no attribute
+   '__init__'"). Fix: manual 2-alignment inside mp_load_super_method.
+   LATENT RISK noted: C-stack mp_obj_iter_buf_t users (sum(), str.join
+   internals via mp_getiter with stack buffers) have the same exposure —
+   audit/fix when it bites.
+6. Alignment attributes added for newly-enabled const objects
+   (mp_module_framebuf, float pi/e/tau/inf/nan, mp_const_empty_dict_obj) —
+   the map checker caught every one at link time, exactly as designed.
+
+OPEN (next session): `0 <= 5 <= 15` (chained comparison) hangs inside the
+BINARY_OP LE dispatch after DUP_TOP/ROT_THREE — every constituent op passes
+in isolation (all relops, zero operands, ROT_TWO/THREE, DUP_TOP, multiple
+assignment); runtime.o at -O0/-O1/-O2/force-switch identical. This blocks
+test_m4 (fact()'s `n <= 1`... actually M4 red may be its own thing — it
+hangs, unverified which line) and nano-gui's create_color range check.
+Debug next: VM_TRACE plus operand-value dump inside op_binary_op_multi;
+suspect another shape-specific miscompile in vm_split.o or objbool/runtime
+compare path. The mpygui ROM otherwise reaches gui/core/colors.py — i.e.
+frozen package imports, snesfb, framebuf and the driver __init__ all work.
+
+Debug tooling worth remembering (tests/ + this entry):
+- Mesen Lua: PC sampling via emu.getState() per frame; write/exec traps via
+  emu.addMemoryCallback(fn, emu.callbackType.write|exec, start, end,
+  emu.cpuType.snes, emu.memType.snesMemory) — the 6-ARG form is mandatory
+  (4-arg silently never fires); symbolize against build/*.map (NB: library
+  symbols use a one-line "sym in section 'x' placed at..." format).
+- /tmp/mbx gets cleaned by systemd-tmpfiles — recreate cfgroot (Mesen2
+  config copy with AllowIoOsAccess) before trusting any run.
+
 ## 2026-07-02 — M6 GREEN: REPL on the TV with joypad input
 
 The REPL ROM (`make mpyrepl`) now drives a real screen and takes controller

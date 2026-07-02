@@ -1,3 +1,16 @@
+diff --git a/extmod/modframebuf.c b/extmod/modframebuf.c
+index 593125aa1..af26a6a12 100644
+--- a/extmod/modframebuf.c
++++ b/extmod/modframebuf.c
+@@ -918,7 +918,7 @@ static const mp_rom_map_elem_t framebuf_module_globals_table[] = {
+ 
+ static MP_DEFINE_CONST_DICT(framebuf_module_globals, framebuf_module_globals_table);
+ 
+-const mp_obj_module_t mp_module_framebuf = {
++const mp_obj_module_t MICROPY_OBJ_BASE_ALIGNMENT mp_module_framebuf = {
+     .base = { &mp_type_module },
+     .globals = (mp_obj_dict_t *)&framebuf_module_globals,
+ };
 diff --git a/py/binary.c b/py/binary.c
 index ef2857b43..3b9fcd87d 100644
 --- a/py/binary.c
@@ -140,6 +153,240 @@ index 1ea34f84b..2bb7785f8 100644
  }
  
  #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
+diff --git a/py/gc.c b/py/gc.c
+index 5fe26ef89..d2eb93dd7 100644
+--- a/py/gc.c
++++ b/py/gc.c
+@@ -186,8 +186,19 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
+ 
+     // Allocate the GC pool of heap blocks.
+     size_t gc_pool_block_len = area->gc_alloc_table_byte_len * BLOCKS_PER_ATB;
+-    area->gc_pool_start = (byte *)end - gc_pool_block_len * BYTES_PER_BLOCK;
+-    area->gc_pool_end = end;
++    // Derive the pool pointers from `start` plus scalar offsets rather than
++    // from `end`: Calypsi 65816 has been observed to truncate the bank byte
++    // of the third pointer parameter when marshalling this call, so `end`
++    // cannot be trusted as a pointer here (its low 16 bits -- and therefore
++    // total_byte_len above -- are correct). Equivalent arithmetic on all
++    // platforms.
++    {
++        size_t pool_bytes = gc_pool_block_len * BYTES_PER_BLOCK;
++        byte *pool_start = area->gc_alloc_table_start + (total_byte_len - pool_bytes);
++        area->gc_pool_start = pool_start;
++        area->gc_pool_end = pool_start + pool_bytes;
++    }
++    (void)end;
+     assert(area->gc_pool_start >= next_table);
+ 
+     // Clear ATB's, and FTB's and WTB's if they are enabled.
+@@ -443,10 +454,20 @@ void gc_collect_start(void) {
+     // Trace root pointers.  This relies on the root pointers being organised
+     // correctly in the mp_state_ctx structure.  We scan nlr_top, dict_locals,
+     // dict_globals, then the root pointer section of mp_state_vm.
+-    void **ptrs = (void **)(void *)&mp_state_ctx;
++    // NB: byte arithmetic for the section base: on compilers that pack
++    // structs without padding (Calypsi 65816: 16-bit size_t, no alignment)
++    // root_start need not be a multiple of sizeof(void *), and pointer
++    // fields WITHIN the section can sit at any 2-byte offset (embedded
++    // size_t/uint16_t fields shift everything after them). Scan the section
++    // twice, phase-shifted by 2 bytes, so every 2-aligned pointer-sized
++    // field is visited; the extra scan only over-marks (conservative GC).
+     size_t root_start = offsetof(mp_state_ctx_t, thread.dict_locals);
+     size_t root_end = offsetof(mp_state_ctx_t, vm.qstr_last_chunk);
+-    gc_collect_root(ptrs + root_start / sizeof(void *), (root_end - root_start) / sizeof(void *));
++    void **ptrs = (void **)(void *)((char *)&mp_state_ctx + root_start);
++    gc_collect_root(ptrs, (root_end - root_start) / sizeof(void *));
++    #if MICROPY_GC_UNALIGNED_ROOT_SECTION
++    gc_collect_root((void **)((char *)ptrs + 2), (root_end - root_start - 2) / sizeof(void *));
++    #endif
+ 
+     #if MICROPY_ENABLE_PYSTACK
+     // Trace root pointers from the Python stack.
+@@ -844,21 +865,13 @@ void gc_weakref_mark(void *ptr) {
+ }
+ #endif
+ 
+-void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+-    bool has_finaliser = alloc_flags & GC_ALLOC_FLAG_HAS_FINALISER;
+-    size_t n_blocks = ((n_bytes + BYTES_PER_BLOCK - 1) & (~(BYTES_PER_BLOCK - 1))) / BYTES_PER_BLOCK;
+-    DEBUG_printf("gc_alloc(" UINT_FMT " bytes -> " UINT_FMT " blocks)\n", n_bytes, n_blocks);
+-
+-    // check for 0 allocation
+-    if (n_blocks == 0) {
+-        return NULL;
+-    }
+-
+-    // check if GC is locked
+-    if (MP_STATE_THREAD(gc_lock_depth) > 0) {
+-        return NULL;
+-    }
+-
++// One allocation attempt: search for a free run and commit it, or return
++// NULL. Split out of gc_alloc so that a retry after gc_collect() re-derives
++// ALL state in a fresh invocation — compilers with fragile caller-saved
++// register allocation (Calypsi 65816) lost cached pointers (e.g. the heap
++// area) across the internal gc_collect() call in the original single-body
++// version, making the post-collect retry compute wild addresses.
++static void *gc_alloc_attempt(size_t n_bytes, size_t n_blocks, bool has_finaliser) {
+     GC_ENTER();
+ 
+     mp_state_mem_area_t *area;
+@@ -866,69 +879,41 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+     size_t end_block;
+     size_t start_block;
+     size_t n_free;
+-    int collected = !MP_STATE_MEM(gc_auto_collect_enabled);
+-    #if MICROPY_GC_SPLIT_HEAP_AUTO
+-    bool added = false;
+-    #endif
+ 
+-    #if MICROPY_GC_ALLOC_THRESHOLD
+-    if (!collected && MP_STATE_MEM(gc_alloc_amount) >= MP_STATE_MEM(gc_alloc_threshold)) {
+-        GC_EXIT();
+-        gc_collect();
+-        collected = 1;
+-        GC_ENTER();
+-    }
++    #if MICROPY_GC_SPLIT_HEAP
++    area = MP_STATE_MEM(gc_last_free_area);
++    #else
++    area = &MP_STATE_MEM(area);
+     #endif
+ 
+-    for (;;) {
+-
+-        #if MICROPY_GC_SPLIT_HEAP
+-        area = MP_STATE_MEM(gc_last_free_area);
+-        #else
+-        area = &MP_STATE_MEM(area);
+-        #endif
+-
+-        // look for a run of n_blocks available blocks
+-        for (; area != NULL; area = NEXT_AREA(area), i = 0) {
+-            n_free = 0;
+-            for (i = area->gc_last_free_atb_index; i < area->gc_alloc_table_byte_len; i++) {
+-                MICROPY_GC_HOOK_LOOP(i);
+-                byte a = area->gc_alloc_table_start[i];
+-                // *FORMAT-OFF*
+-                if (ATB_0_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 0; goto found; } } else { n_free = 0; }
+-                if (ATB_1_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 1; goto found; } } else { n_free = 0; }
+-                if (ATB_2_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 2; goto found; } } else { n_free = 0; }
+-                if (ATB_3_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 3; goto found; } } else { n_free = 0; }
+-                // *FORMAT-ON*
+-            }
+-
+-            // No free blocks found on this heap. Mark this heap as
+-            // filled, so we won't try to find free space here again until
+-            // space is freed.
+-            #if MICROPY_GC_SPLIT_HEAP
+-            if (n_blocks == 1) {
+-                area->gc_last_free_atb_index = (i + 1) / BLOCKS_PER_ATB; // or (size_t)-1
+-            }
+-            #endif
++    // look for a run of n_blocks available blocks
++    for (; area != NULL; area = NEXT_AREA(area), i = 0) {
++        n_free = 0;
++        for (i = area->gc_last_free_atb_index; i < area->gc_alloc_table_byte_len; i++) {
++            MICROPY_GC_HOOK_LOOP(i);
++            byte a = area->gc_alloc_table_start[i];
++            // *FORMAT-OFF*
++            if (ATB_0_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 0; goto found; } } else { n_free = 0; }
++            if (ATB_1_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 1; goto found; } } else { n_free = 0; }
++            if (ATB_2_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 2; goto found; } } else { n_free = 0; }
++            if (ATB_3_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 3; goto found; } } else { n_free = 0; }
++            // *FORMAT-ON*
+         }
+ 
+-        GC_EXIT();
+-        // nothing found!
+-        if (collected) {
+-            #if MICROPY_GC_SPLIT_HEAP_AUTO
+-            if (!added && gc_try_add_heap(n_bytes)) {
+-                added = true;
+-                continue;
+-            }
+-            #endif
+-            return NULL;
++        // No free blocks found on this heap. Mark this heap as
++        // filled, so we won't try to find free space here again until
++        // space is freed.
++        #if MICROPY_GC_SPLIT_HEAP
++        if (n_blocks == 1) {
++            area->gc_last_free_atb_index = (i + 1) / BLOCKS_PER_ATB; // or (size_t)-1
+         }
+-        DEBUG_printf("gc_alloc(" UINT_FMT "): no free mem, triggering GC\n", n_bytes);
+-        gc_collect();
+-        collected = 1;
+-        GC_ENTER();
++        #endif
+     }
+ 
++    GC_EXIT();
++    // nothing found!
++    return NULL;
++
+     // found, ending at block i inclusive
+ found:
+     // get starting and end blocks, both inclusive
+@@ -1001,6 +986,58 @@ found:
+     return ret_ptr;
+ }
+ 
++// Called via a volatile function pointer so the attempt CANNOT be inlined
++// back into gc_alloc (Calypsi ignores noinline; inlining would reintroduce
++// the stale-cached-pointer-across-gc_collect bug this split exists to fix).
++static void *(*volatile gc_alloc_attempt_fn)(size_t, size_t, bool) = gc_alloc_attempt;
++
++void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
++    bool has_finaliser = alloc_flags & GC_ALLOC_FLAG_HAS_FINALISER;
++    size_t n_blocks = ((n_bytes + BYTES_PER_BLOCK - 1) & (~(BYTES_PER_BLOCK - 1))) / BYTES_PER_BLOCK;
++    DEBUG_printf("gc_alloc(" UINT_FMT " bytes -> " UINT_FMT " blocks)\n", n_bytes, n_blocks);
++
++    // check for 0 allocation
++    if (n_blocks == 0) {
++        return NULL;
++    }
++
++    // check if GC is locked
++    if (MP_STATE_THREAD(gc_lock_depth) > 0) {
++        return NULL;
++    }
++
++    int collected = !MP_STATE_MEM(gc_auto_collect_enabled);
++    #if MICROPY_GC_SPLIT_HEAP_AUTO
++    bool added = false;
++    #endif
++
++    #if MICROPY_GC_ALLOC_THRESHOLD
++    if (!collected && MP_STATE_MEM(gc_alloc_amount) >= MP_STATE_MEM(gc_alloc_threshold)) {
++        gc_collect();
++        collected = 1;
++    }
++    #endif
++
++    for (;;) {
++        void *ret_ptr = gc_alloc_attempt_fn(n_bytes, n_blocks, has_finaliser);
++        if (ret_ptr != NULL) {
++            return ret_ptr;
++        }
++        if (collected) {
++            #if MICROPY_GC_SPLIT_HEAP_AUTO
++            if (!added && gc_try_add_heap(n_bytes)) {
++                added = true;
++                continue;
++            }
++            #endif
++            return NULL;
++        }
++        DEBUG_printf("gc_alloc(" UINT_FMT "): no free mem, triggering GC\n", n_bytes);
++        gc_collect();
++        collected = 1;
++    }
++}
++
+ // force the freeing of a piece of memory
+ // TODO: freeing here does not call finaliser
+ void gc_free(void *ptr) {
 diff --git a/py/misc.h b/py/misc.h
 index a9c02a4dd..18d0240c9 100644
 --- a/py/misc.h
@@ -502,6 +749,24 @@ index 3360a4e20..ca327a998 100644
      .base = { &mp_type_module },
      .globals = (mp_obj_dict_t *)&mp_module_weakref_globals,
  };
+diff --git a/py/mpconfig.h b/py/mpconfig.h
+index 8d28775c8..0519fa26f 100644
+--- a/py/mpconfig.h
++++ b/py/mpconfig.h
+@@ -261,6 +261,13 @@ typedef uint64_t mp_uint_t;
+ // be reduced to save memory when the heap is small enough.  The type must be
+ // big enough to index all blocks in the heap, which is set by
+ // heap-size-in-bytes / MICROPY_BYTES_PER_GC_BLOCK.
++// Whether the mp_state root-pointer section can contain pointer fields at
++// non-pointer-aligned offsets (compilers that pack structs and have a
++// size_t narrower than a pointer); adds a phase-shifted second root scan.
++#ifndef MICROPY_GC_UNALIGNED_ROOT_SECTION
++#define MICROPY_GC_UNALIGNED_ROOT_SECTION (0)
++#endif
++
+ #ifndef MICROPY_GC_STACK_ENTRY_TYPE
+ #define MICROPY_GC_STACK_ENTRY_TYPE size_t
+ #endif
 diff --git a/py/mpz.c b/py/mpz.c
 index 5a4d7d27d..82c694a9f 100644
 --- a/py/mpz.c
@@ -658,6 +923,45 @@ index 3c9122a69..bb28cfa51 100644
  
  // Constant types, globally accessible
  extern const mp_obj_type_t mp_type_type;
+diff --git a/py/objarray.c b/py/objarray.c
+index 75bc671c1..3008e4959 100644
+--- a/py/objarray.c
++++ b/py/objarray.c
+@@ -53,7 +53,7 @@
+ #if MICROPY_PY_BUILTINS_MEMORYVIEW
+ #define TYPECODE_MASK (0x7f)
+ #define memview_offset free
+-#define memview_offset_max ((1LL << MP_OBJ_ARRAY_FREE_SIZE_BITS) - 1)
++#define memview_offset_max ((size_t)-1) // free is a plain size_t now (see objarray.h)
+ #else
+ // make (& TYPECODE_MASK) a null operation if memorview not enabled
+ #define TYPECODE_MASK (~(size_t)0)
+diff --git a/py/objarray.h b/py/objarray.h
+index bb7a514b9..a046fb7ae 100644
+--- a/py/objarray.h
++++ b/py/objarray.h
+@@ -40,14 +40,16 @@
+ // see comment at the beginning of objarray.c.
+ typedef struct _mp_obj_array_t {
+     mp_obj_base_t base;
+-    size_t typecode : 8;
++    // Plain fields rather than the upstream size_t bitfields: Calypsi 65816
++    // miscompiles bitfield accesses, and with 16-bit size_t the free field
++    // would only get 8 bits anyway (overflows for bytearrays > 255 spare
++    // elements). Layout stays compatible for all users.
++    uint8_t typecode;
+     // free is number of unused elements after len used elements
+     // alloc size = len + free
+     // But for memoryview, 'free' is reused as offset (in elements) into the
+-    // parent object. (Union is not used to not go into a complication of
+-    // union-of-bitfields with different toolchains). See comments in
+-    // objarray.c.
+-    size_t free : MP_OBJ_ARRAY_FREE_SIZE_BITS;
++    // parent object. See comments in objarray.c.
++    size_t free;
+     size_t len; // in elements
+     void *items;
+ } mp_obj_array_t;
 diff --git a/py/objbool.c b/py/objbool.c
 index 5b3e3660e..f460d763b 100644
 --- a/py/objbool.c
@@ -671,10 +975,44 @@ index 5b3e3660e..f460d763b 100644
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_false_obj = {{&mp_type_bool}, false};
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_true_obj = {{&mp_type_bool}, true};
  #endif
+diff --git a/py/objdict.c b/py/objdict.c
+index 692a7de42..7fc4f5e95 100644
+--- a/py/objdict.c
++++ b/py/objdict.c
+@@ -37,7 +37,7 @@ bool mp_obj_is_dict_or_ordereddict(mp_obj_t o) {
+     return mp_obj_is_obj(o) && MP_OBJ_TYPE_GET_SLOT_OR_NULL(((mp_obj_base_t *)MP_OBJ_TO_PTR(o))->type, make_new) == mp_obj_dict_make_new;
+ }
+ 
+-const mp_obj_dict_t mp_const_empty_dict_obj = {
++const mp_obj_dict_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_empty_dict_obj = {
+     .base = { .type = &mp_type_dict },
+     .map = {
+         .all_keys_are_qstrs = 0,
 diff --git a/py/objfloat.c b/py/objfloat.c
-index b0ad70de4..4a1ef549f 100644
+index b0ad70de4..cfb22cda1 100644
 --- a/py/objfloat.c
 +++ b/py/objfloat.c
+@@ -57,15 +57,15 @@ typedef struct _mp_obj_float_t {
+     mp_float_t value;
+ } mp_obj_float_t;
+ 
+-const mp_obj_float_t mp_const_float_e_obj = {{&mp_type_float}, (mp_float_t)M_E};
+-const mp_obj_float_t mp_const_float_pi_obj = {{&mp_type_float}, (mp_float_t)M_PI};
++const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_float_e_obj = {{&mp_type_float}, (mp_float_t)M_E};
++const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_float_pi_obj = {{&mp_type_float}, (mp_float_t)M_PI};
+ #if MICROPY_PY_MATH_CONSTANTS
+ #ifndef NAN
+ #error NAN macro is not defined
+ #endif
+-const mp_obj_float_t mp_const_float_tau_obj = {{&mp_type_float}, (mp_float_t)(2.0 * M_PI)};
+-const mp_obj_float_t mp_const_float_inf_obj = {{&mp_type_float}, (mp_float_t)INFINITY};
+-const mp_obj_float_t mp_const_float_nan_obj = {{&mp_type_float}, (mp_float_t)NAN};
++const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_float_tau_obj = {{&mp_type_float}, (mp_float_t)(2.0 * M_PI)};
++const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_float_inf_obj = {{&mp_type_float}, (mp_float_t)INFINITY};
++const mp_obj_float_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_float_nan_obj = {{&mp_type_float}, (mp_float_t)NAN};
+ #endif
+ 
+ #endif
 @@ -77,14 +77,14 @@ const mp_obj_float_t mp_const_float_nan_obj = {{&mp_type_float}, (mp_float_t)NAN
  mp_int_t mp_float_hash(mp_float_t src) {
      mp_float_union_t u = {.f = src};
@@ -860,6 +1198,29 @@ index 892c5771b..132de94f2 100644
          .base = {.type = &mp_type_attrtuple}, \
          .len = nitems, \
          .items = { __VA_ARGS__, MP_ROM_PTR((void *)fields) } \
+diff --git a/py/objtype.c b/py/objtype.c
+index 68a36ff98..afecf9fa0 100644
+--- a/py/objtype.c
++++ b/py/objtype.c
+@@ -1423,8 +1423,16 @@ MP_DEFINE_CONST_OBJ_TYPE(
+     );
+ 
+ void mp_load_super_method(qstr attr, mp_obj_t *dest) {
+-    mp_obj_super_t super = {{&mp_type_super}, dest[1], dest[2]};
+-    mp_load_method(MP_OBJ_FROM_PTR(&super), attr, dest);
++    // The super object is built on the C stack, so it must satisfy the
++    // object alignment REPR_B requires (bit 0 clear). Calypsi 65816 gives
++    // stack locals no alignment, so align the storage by hand: at an odd
++    // stack address the tagged pointer would read as a small int.
++    byte buf[sizeof(mp_obj_super_t) + 1];
++    mp_obj_super_t *super = (mp_obj_super_t *)(((uintptr_t)&buf[0] & 1) ? &buf[1] : &buf[0]);
++    super->base.type = &mp_type_super;
++    super->type = dest[1];
++    super->obj = dest[2];
++    mp_load_method(MP_OBJ_FROM_PTR(super), attr, dest);
+ }
+ 
+ /******************************************************************************/
 diff --git a/py/parse.c b/py/parse.c
 index 1a50b13b5..df291ee24 100644
 --- a/py/parse.c

@@ -20,7 +20,11 @@
 
 #include <stdint.h>
 
-#define MICROPY_CONFIG_ROM_LEVEL (MICROPY_CONFIG_ROM_LEVEL_MINIMUM)
+// CORE_FEATURES since nano-gui: slicing, property, enumerate, str.format
+// and friends are gated below this level (ROM is 512KB+, there is room)
+#define MICROPY_CONFIG_ROM_LEVEL (MICROPY_CONFIG_ROM_LEVEL_CORE_FEATURES)
+// ...but no filesystem: io/open would need a stream backend
+#define MICROPY_PY_IO (0)
 
 // Frozen modules are compiled on the host with mpy-cross, but the compiler
 // also runs ON TARGET for the REPL (build/mpyrepl.sfc) and eval/exec.
@@ -62,10 +66,20 @@
 
 // heap is < 64K so 16-bit GC mark-stack entries suffice
 #define MICROPY_GC_STACK_ENTRY_TYPE uint16_t
+#define MICROPY_GC_ALLOC_THRESHOLD (0)
+// Calypsi packs structs (size_t is 16-bit, no alignment): the mp_state root
+// section has pointers at 2-mod-4 offsets, needing the phase-shifted scan
+#define MICROPY_GC_UNALIGNED_ROOT_SECTION (1)
 
 #define MICROPY_ALLOC_PATH_MAX (64)
 #define MICROPY_NO_ALLOCA (1)
-#define MICROPY_ENABLE_EXTERNAL_IMPORT (0)
+// Full import machinery so frozen PACKAGES resolve (nano-gui is a package
+// tree: gui.core.*, gui.widgets.*). There is no filesystem: mp_import_stat
+// in the port always answers NO_EXIST, so only frozen modules are found.
+#define MICROPY_ENABLE_EXTERNAL_IMPORT (1)
+// complex/cmath for nano-gui's Dial widget (clock hands are polar floats)
+#define MICROPY_PY_BUILTINS_COMPLEX (1)
+#define MICROPY_PY_CMATH (1)
 #define MICROPY_ERROR_REPORTING (MICROPY_ERROR_REPORTING_NORMAL)
 #define MICROPY_ROM_TEXT_COMPRESSION (0)
 // Floats: Calypsi's C library provides IEEE single-precision incl. the

@@ -97,7 +97,7 @@ $(MPBUILD)/extmod/%.o: $(MPTOP)/extmod/%.c $(PORT)/mpconfigport.h | $(GENERATED)
 	@mkdir -p $(MPBUILD)/extmod
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-PORT_OBJS := $(MPBUILD)/main.o $(SNES_OBJS)
+PORT_OBJS := $(MPBUILD)/main.o $(MPBUILD)/modsnesfb.o $(SNES_OBJS)
 
 # VM_SPLIT=1 replaces py/vm.c (one 21KB function both compilers miscompile
 # layout-sensitively, DECISIONS.md) with port/vm_split.c (one tiny function
@@ -114,7 +114,7 @@ $(VMSTAMP): | $(GENHDR)
 	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
             $(addprefix $(MPTOP)/extmod/,$(EXTMOD_SRC_NAMES)) \
-            $(PORT)/main.c $(PORT)/repl_main.c
+            $(PORT)/main.c $(PORT)/repl_main.c $(PORT)/modsnesfb.c
 
 .PHONY: mpy patch-micropython
 mpy: $(BUILD)/mpy.sfc
@@ -179,6 +179,9 @@ $(MPBUILD)/main.o: $(PORT)/main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENE
 $(MPBUILD)/vm_split.o: $(PORT)/vm_split.c $(PORT)/mpconfigport.h | $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
+$(MPBUILD)/modsnesfb.o: $(PORT)/modsnesfb.c $(PORT)/mpconfigport.h | $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
 # ---- frozen bytecode: host mpy-cross + mpy-tool ------------------------------
 
 MPY_CROSS := $(MPTOP)/mpy-cross/build/mpy-cross
@@ -220,6 +223,43 @@ $(BUILD)/mpy4.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_m4.o $(VMST
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy4.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map
 
+# ---- M7: nano-gui (peterhinch/micropython-nano-gui, frozen package tree) ----
+# port/main_gui.py + the vendored pylib are each compiled by mpy-cross with
+# their package-relative source names, so the full importer resolves
+# gui.core.* etc. from the frozen list; snesfb (C) provides the display.
+
+GUI_PYLIB := color_setup.py drivers/__init__.py drivers/boolpalette.py \
+             gui/__init__.py gui/core/__init__.py gui/core/colors.py \
+             gui/core/nanogui.py gui/core/writer.py \
+             gui/widgets/__init__.py gui/widgets/dial.py gui/widgets/label.py \
+             gui/widgets/led.py gui/widgets/meter.py \
+             gui/fonts/__init__.py gui/fonts/arial10.py gui/fonts/freesans20.py
+
+GUI_MPY := $(MPBUILD)/gui_mpy/main.mpy \
+           $(addprefix $(MPBUILD)/gui_mpy/,$(GUI_PYLIB:.py=.mpy))
+
+$(MPBUILD)/gui_mpy/main.mpy: $(PORT)/main_gui.py $(MPY_CROSS) | $(GENHDR)
+	@mkdir -p $(dir $@)
+	$(MPY_CROSS) -o $@ -s main.py $<
+
+$(MPBUILD)/gui_mpy/%.mpy: $(PORT)/pylib/%.py $(MPY_CROSS) | $(GENHDR)
+	@mkdir -p $(dir $@)
+	$(MPY_CROSS) -o $@ -s $*.py $<
+
+$(MPBUILD)/frozen_content_gui.c: $(GUI_MPY) $(GENHDR)/qstrdefs.generated.h
+	$(PYTHON) $(MPTOP)/tools/mpy-tool.py -f -q $(GENHDR)/qstrdefs.preprocessed.h \
+	  -mlongint-impl=none $(GUI_MPY) > $@
+
+$(MPBUILD)/frozen_content_gui.o: $(MPBUILD)/frozen_content_gui.c
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+.PHONY: mpygui
+mpygui: $(BUILD)/mpygui.sfc
+
+$(BUILD)/mpygui.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpygui.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpygui.map
+
 # ---- M5: interactive REPL (compiler runs on the 65816) ----------------------
 # Same core objects but port/repl_main.c as main; frozen_content.o is still
 # linked because qstr.c references the frozen qstr pool (it is not executed).
@@ -244,7 +284,9 @@ CONSOLE_OBJS := $(BUILD)/console.o $(BUILD)/oskb.o $(MPBUILD)/font_tiles.o
 REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o \
              $(CONSOLE_OBJS)
 
-$(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
+# The REPL ROM freezes the nano-gui package tree (frozen_content_gui), so
+# the GUI can be driven interactively; its frozen main.py is never executed.
+$(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyrepl.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyrepl.map
 

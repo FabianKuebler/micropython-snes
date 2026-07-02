@@ -1,4 +1,5 @@
 #include "py/bc.h"
+#include "py/builtin.h"
 #include "py/cstack.h"
 #if defined(__VBCC__)
 // mp_make_function_from_proto_fun reaches Calypsi transitively; vbcc needs it
@@ -30,21 +31,13 @@
 // (DECISIONS.md, bug 2), so this function must not rely on them.
 static void run_frozen(void)
 {
-  void *frozen_data;
-  int frozen_type;
-  mp_find_frozen_module("main.py", &frozen_type, &frozen_data);
-  if (frozen_type != MP_FROZEN_MPY) {
-    mb_puts("FATAL: frozen main.py not found\n");
-    mb_finish(MB_STATUS_PANIC);
-  }
+  // Execute the frozen main.py through the regular import machinery (the
+  // frozen module is registered as "main"). The earlier direct
+  // proto_fun-call path miscompiled in some ROM layouts; the importer path
+  // is exercised (and proven) by every frozen package import.
   nlr_buf_t nlr;
   if (nlr_push(&nlr) == 0) {
-    const mp_frozen_module_t *frozen = frozen_data;
-    mp_module_context_t *ctx = m_new_obj(mp_module_context_t);
-    ctx->module.globals = mp_globals_get();
-    ctx->constants = frozen->constants;
-    mp_obj_t module_fun = mp_make_function_from_proto_fun(frozen->proto_fun, ctx, NULL);
-    mp_call_function_0(module_fun);
+    mp_import_name(qstr_from_str("main"), mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
     nlr_pop();
   } else {
     mb_puts("uncaught exception\n");
@@ -86,6 +79,13 @@ mp_lexer_t *mp_lexer_new_from_file(qstr filename)
 {
   (void)filename;
   mp_raise_OSError(MP_ENOENT);
+}
+
+// No filesystem: the importer finds only frozen modules
+mp_import_stat_t mp_import_stat(const char *path)
+{
+  (void)path;
+  return MP_IMPORT_STAT_NO_EXIST;
 }
 
 void nlr_jump_fail(void *val)

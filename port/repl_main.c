@@ -8,6 +8,7 @@
 // port/main.c rather than shared, so the frozen-module ROMs keep their exact
 // translation units.
 
+#include "py/builtin.h"
 #include "py/compile.h"
 #include "py/cstack.h"
 #include "py/gc.h"
@@ -189,6 +190,13 @@ mp_lexer_t *mp_lexer_new_from_file(qstr filename)
 {
   (void)filename;
   mp_raise_OSError(MP_ENOENT);
+}
+
+// No filesystem: the importer finds only frozen modules
+mp_import_stat_t mp_import_stat(const char *path)
+{
+  (void)path;
+  return MP_IMPORT_STAT_NO_EXIST;
 }
 
 // ---- runtime hooks (same as port/main.c; see comments there) ----------------
