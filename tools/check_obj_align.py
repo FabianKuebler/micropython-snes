@@ -18,6 +18,9 @@ DATA_SECTIONS = {"cfar", "zfar", "ifar", "data", "znear", "inear", "cnear"}
 OBJ_RE = re.compile(
     r"(_obj\d*$|^mp_type_|^mp_module_(?!.*_table$)|^mp_const_|_exception$|_globals$)"
 )
+# Anonymous C string literals (Calypsi names them after their content) are
+# not objects.
+EXCLUDE_RE = re.compile(r"^_StringLiteral_")
 
 SYM_RE = re.compile(r"^(\S+) in section '(\w+)'$")
 PLACED_RE = re.compile(r"^\s*placed at address ([0-9a-fA-F]+)-")
@@ -32,7 +35,8 @@ def main(path):
             sym, sect = m.group(1), m.group(2)
             continue
         m = PLACED_RE.match(line)
-        if m and sym and sect in DATA_SECTIONS and OBJ_RE.search(sym):
+        if (m and sym and sect in DATA_SECTIONS and OBJ_RE.search(sym)
+                and not EXCLUDE_RE.search(sym)):
             seen += 1
             addr = int(m.group(1), 16)
             if addr & 1:

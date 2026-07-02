@@ -1,5 +1,50 @@
 # Decisions log
 
+## 2026-07-02 — M5 GREEN: interactive REPL, Python compiled ON the 65816
+
+`make mpyrepl` builds a REPL ROM (`port/repl_main.c`): lines arrive through a
+new mailbox **stdin ring** ($7FE006/8 index words + $7FFE00 u8[512]; stdout
+ring shrank to 7664 bytes — see snes/mailbox.h), are lexed/parsed/compiled by
+the MicroPython compiler running on target (`MICROPY_ENABLE_COMPILER 1`) and
+executed by the split VM. Multi-line compound statements work via
+`mp_repl_continue_with_input` ("..." prompts); bare expressions print their
+value (`MP_PARSE_SINGLE_INPUT` + is_repl); Ctrl-D exits PASS. The Lua harness
+feeds a scripted session (`run_rom(..., stdin_data=...)`);
+`tests/test_repl.py` asserts the session byte-for-byte — including defining
+`sq(x)` interactively and calling it (144), and a ZeroDivisionError traceback.
+pytest now 5/5 (M0 hello, M1 selftest, M3 mpy, M4, M5 repl).
+
+Two new toolchain/port findings on the way (both in patches/0001 + Makefile):
+
+1. **Calypsi ICE on py/lexer.c at any -O >= 1**: "ControlFlowOptimize.hs:
+   Non-exhaustive patterns in function go". Only surfaced once the compiler
+   code was actually enabled. Workaround: `$(MPBUILD)/py/lexer.o: MPOPT = -O0`
+   (Makefile now routes -O flags through `MPOPT`). Report upstream.
+
+2. **py/parse.c chunk allocator breaks on 16-bit size_t + unaligned structs**
+   (the REPL's "NameError: name 'micropython' isn't defined" mystery):
+   `mp_parse_chunk_t { size_t alloc; union { size_t used; ptr next; }; byte
+   data[]; }` puts `data[]` at offset 6 when size_t is 2 bytes and the
+   compiler inserts no padding — so every parse node lands at address ≡2
+   (mod 4) and `MP_PARSE_NODE_IS_STRUCT` (low two bits == 0) misclassifies
+   every struct node as a leaf; the "tree" becomes heap-layout-dependent
+   garbage while lexer, qstr interning, maps and codegen are all perfectly
+   fine (each was probe-verified in isolation on target). Fix: make
+   `alloc`/`used` uint32_t so data[] starts at offset 8. Upstreamable —
+   this bites any port with 16-bit size_t and packed structs.
+
+   Debug pattern that cracked it: on-target unit probes over the mailbox
+   (qstr_find/parse-node-roundtrip/map-with-qstr-key all OK) then dumping
+   lexer tokens (OK) and the parse tree (single drifting leaf → allocator).
+
+Also: `MICROPY_ERROR_REPORTING` switched TERSE → NORMAL (fits ROM easily and
+the REPL needs "name 'foo' isn't defined"-grade messages), and
+`MICROPY_STACK_CHECK 1` with 1KB margin so deep parser recursion raises
+RuntimeError instead of smashing the 7.4KB bank-0 stack. eval/exec now exist
+as builtins in ALL ROMs (compiler is enabled globally); M3/M4 stay green.
+`mp_lexer_new_from_file` stubbed to raise OSError (no filesystem), like
+ports/minimal.
+
 ## 2026-07-02 — M4 GREEN: real root cause found (ROM object alignment), VM split shipped
 
 **The "layout-sensitive VM miscompile" was never (primarily) a code-gen bug.

@@ -53,8 +53,14 @@ PYTHON := python3
 # scripts; type sizes don't matter there, visibility of config-gated code does.
 QCPP := gcc -E
 MP_INC := -I$(PORT) -I$(MPTOP) -I$(MPBUILD)
-MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul -O1 --no-cross-call -DNDEBUG \
+MPOPT = -O1 --no-cross-call
+MPCFLAGS = --core=65816 --target=snes $(MODEL) --no-ppu-mul $(MPOPT) -DNDEBUG \
            $(MP_INC) --list-file=$(@:.o=.lst)
+
+# Calypsi 5.17 internal error (ControlFlowOptimize.hs "Non-exhaustive
+# patterns") on lexer.c at every -O level >= 1; -O0 compiles fine. Only hit
+# once the on-target compiler was enabled for the REPL.
+$(MPBUILD)/py/lexer.o: MPOPT = -O0
 
 PY_SRC_NAMES := \
 	mpstate.c nlr.c nlrx86.c nlrx64.c nlrthumb.c nlraarch64.c nlrmips.c \
@@ -98,7 +104,7 @@ $(VMSTAMP): | $(GENHDR)
 	rm -f $(MPBUILD)/vmsel_*.stamp
 	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
-            $(PORT)/main.c
+            $(PORT)/main.c $(PORT)/repl_main.c
 
 .PHONY: mpy patch-micropython
 mpy: $(BUILD)/mpy.sfc
@@ -203,6 +209,22 @@ $(MPBUILD)/frozen_content_m4.o: $(MPBUILD)/frozen_content_m4.c
 $(BUILD)/mpy4.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_m4.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy4.map $(filter-out $(VMSTAMP),$^)
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map
+
+# ---- M5: interactive REPL (compiler runs on the 65816) ----------------------
+# Same core objects but port/repl_main.c as main; frozen_content.o is still
+# linked because qstr.c references the frozen qstr pool (it is not executed).
+
+.PHONY: mpyrepl
+mpyrepl: $(BUILD)/mpyrepl.sfc
+
+$(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
+
+$(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyrepl.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyrepl.map
 
 clean:
 	rm -rf $(BUILD)

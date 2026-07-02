@@ -3,8 +3,30 @@
 void mb_init(void)
 {
   MB_WINDEX = 0;
+  MB_IN_WINDEX = 0;
+  MB_IN_RINDEX = 0;
   MB_STATUS = MB_STATUS_RUNNING;
   MB_MAGIC = MB_MAGIC_ALIVE;
+}
+
+int mb_getc_nonblock(void)
+{
+  uint16_t ri = MB_IN_RINDEX;
+  uint8_t b;
+  if (ri == MB_IN_WINDEX) {
+    return -1;
+  }
+  b = MB_IN_RING[ri % MB_IN_RING_SIZE];
+  MB_IN_RINDEX = (uint16_t)(ri + 1);
+  return b;
+}
+
+char mb_getc(void)
+{
+  int c;
+  while ((c = mb_getc_nonblock()) < 0) {
+  }
+  return (char)c;
 }
 
 void mb_putc(char c)

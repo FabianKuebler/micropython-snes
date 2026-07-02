@@ -7,7 +7,13 @@
 
 -- mailbox lives at $7FE000; snesWorkRam offsets are relative to $7E0000
 local MB_MAGIC, MB_STATUS, MB_WINDEX, MB_RING = 0x1E000, 0x1E002, 0x1E004, 0x1E010
-local RING_SIZE = 8176
+local MB_IN_WINDEX, MB_IN_RINDEX, MB_IN_RING = 0x1E006, 0x1E008, 0x1FE00
+local RING_SIZE = 7664
+local IN_RING_SIZE = 512
+
+-- Bytes to feed into the ROM's stdin ring (REPL input); "" for none.
+local STDIN = "@STDIN@"
+local stdinPos = 0
 
 local frames = 0
 local sawMagic = false
@@ -16,6 +22,23 @@ local logf = io.open("@LOGFILE@", "wb")
 
 local function word(addr)
   return emu.readWord(addr, emu.memType.snesWorkRam, false)
+end
+
+local function feedStdin()
+  if stdinPos >= #STDIN then
+    return
+  end
+  local wi = word(MB_IN_WINDEX)
+  local ri = word(MB_IN_RINDEX)
+  local free = IN_RING_SIZE - ((wi - ri) % 65536)
+  while free > 0 and stdinPos < #STDIN do
+    stdinPos = stdinPos + 1
+    emu.write(MB_IN_RING + (wi % IN_RING_SIZE), string.byte(STDIN, stdinPos),
+              emu.memType.snesWorkRam)
+    wi = (wi + 1) % 65536
+    free = free - 1
+  end
+  emu.writeWord(MB_IN_WINDEX, wi, emu.memType.snesWorkRam)
 end
 
 local function drain()
@@ -48,6 +71,7 @@ local function onFrame()
     end
   end
 
+  feedStdin()
   drain()
   local status = word(MB_STATUS)
   if status ~= 0 then

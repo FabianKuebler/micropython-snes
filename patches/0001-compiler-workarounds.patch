@@ -737,6 +737,26 @@ index 892c5771b..132de94f2 100644
          .base = {.type = &mp_type_attrtuple}, \
          .len = nitems, \
          .items = { __VA_ARGS__, MP_ROM_PTR((void *)fields) } \
+diff --git a/py/parse.c b/py/parse.c
+index 1a50b13b5..df291ee24 100644
+--- a/py/parse.c
++++ b/py/parse.c
+@@ -215,9 +215,13 @@ typedef struct _rule_stack_t {
+ } rule_stack_t;
+ 
+ typedef struct _mp_parse_chunk_t {
+-    size_t alloc;
++    // uint32_t rather than size_t: parse-node struct pointers must have their
++    // low 2 bits clear (MP_PARSE_NODE_IS_STRUCT), so data[] must start 4-byte
++    // aligned. On ports with 16-bit size_t and no natural struct padding
++    // (e.g. Calypsi 65816) a size_t here would put data[] at offset 6.
++    uint32_t alloc;
+     union {
+-        size_t used;
++        uint32_t used;
+         struct _mp_parse_chunk_t *next;
+     } union_;
+     byte data[];
 diff --git a/py/qstr.c b/py/qstr.c
 index 7902646a9..e9d395715 100644
 --- a/py/qstr.c

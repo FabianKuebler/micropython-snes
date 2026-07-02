@@ -22,9 +22,14 @@
 
 #define MICROPY_CONFIG_ROM_LEVEL (MICROPY_CONFIG_ROM_LEVEL_MINIMUM)
 
-// Bytecode VM only: Python is compiled on the host with mpy-cross and
-// frozen into the ROM
-#define MICROPY_ENABLE_COMPILER (0)
+// Frozen modules are compiled on the host with mpy-cross, but the compiler
+// also runs ON TARGET for the REPL (build/mpyrepl.sfc) and eval/exec.
+#define MICROPY_ENABLE_COMPILER (1)
+#define MICROPY_HELPER_REPL (1)
+// The recursive-descent parser/compiler must fail soft on deep input: the
+// C stack is only ~7.4KB (bank 0)
+#define MICROPY_STACK_CHECK (1)
+#define MICROPY_STACK_CHECK_MARGIN (1024)
 #define MICROPY_MODULE_FROZEN_MPY (1)
 #define MICROPY_QSTR_EXTRA_POOL mp_qstr_frozen_const_pool
 #define MICROPY_ENABLE_GC (1)
@@ -61,7 +66,7 @@
 #define MICROPY_ALLOC_PATH_MAX (64)
 #define MICROPY_NO_ALLOCA (1)
 #define MICROPY_ENABLE_EXTERNAL_IMPORT (0)
-#define MICROPY_ERROR_REPORTING (MICROPY_ERROR_REPORTING_TERSE)
+#define MICROPY_ERROR_REPORTING (MICROPY_ERROR_REPORTING_NORMAL)
 #define MICROPY_ROM_TEXT_COMPRESSION (0)
 #define MICROPY_FLOAT_IMPL (MICROPY_FLOAT_IMPL_NONE)
 #define MICROPY_LONGINT_IMPL (MICROPY_LONGINT_IMPL_NONE)

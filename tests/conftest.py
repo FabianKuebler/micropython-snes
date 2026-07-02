@@ -56,12 +56,21 @@ def build(*targets):
     assert res.returncode == 0, f"build failed:\n{res.stdout[-2000:]}\n{res.stderr[-2000:]}"
 
 
-def run_rom(rom, mesen_env, tmp_path, max_frames=1800):
-    """Run a mailbox-protocol ROM under Mesen; return (exit_code, stdout_text)."""
+def lua_bytes(data):
+    """Encode bytes as a Lua short-string literal body (decimal escapes)."""
+    return "".join("\\%d" % b for b in data)
+
+
+def run_rom(rom, mesen_env, tmp_path, max_frames=1800, stdin_data=b""):
+    """Run a mailbox-protocol ROM under Mesen; return (exit_code, stdout_text).
+
+    stdin_data is fed into the ROM's stdin ring by the harness (REPL input).
+    """
     log = tmp_path / "mailbox.log"
     lua = (HARNESS_LUA.read_text()
            .replace("@LOGFILE@", str(log))
-           .replace("@MAXFRAMES@", str(max_frames)))
+           .replace("@MAXFRAMES@", str(max_frames))
+           .replace("@STDIN@", lua_bytes(stdin_data)))
     script = tmp_path / "harness.lua"
     script.write_text(lua)
     res = subprocess.run([MESEN, "--testrunner", str(rom), str(script)],

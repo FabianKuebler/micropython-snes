@@ -8,6 +8,7 @@
 #endif
 #include "py/frozenmod.h"
 #include "py/gc.h"
+#include "py/lexer.h"
 #include "py/mperrno.h"
 #include "py/mphal.h"
 #include "py/objmodule.h"
@@ -77,6 +78,14 @@ void gc_collect(void)
   gc_collect_root((void **)0x7E0100UL, 0x1F00 / 4);
   gc_collect_root((void **)0x7E0102UL, (0x1F00 - 4) / 4);
   gc_collect_end();
+}
+
+// No filesystem: execfile()/compile-from-file cannot work (same stub as
+// ports/minimal). Referenced since the on-target compiler was enabled.
+mp_lexer_t *mp_lexer_new_from_file(qstr filename)
+{
+  (void)filename;
+  mp_raise_OSError(MP_ENOENT);
 }
 
 void nlr_jump_fail(void *val)
