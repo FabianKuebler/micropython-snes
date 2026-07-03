@@ -1,7 +1,108 @@
 diff --git a/extmod/modframebuf.c b/extmod/modframebuf.c
-index 593125aa1..af26a6a12 100644
+index 593125aa1..82cdfb280 100644
 --- a/extmod/modframebuf.c
 +++ b/extmod/modframebuf.c
+@@ -68,13 +68,13 @@ typedef struct _mp_framebuf_p_t {
+ // Functions for MHLSB and MHMSB
+ 
+ static void mono_horiz_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, uint32_t col) {
+-    size_t index = (x + y * fb->stride) >> 3;
++    size_t index = ((size_t)x + (size_t)y * (size_t)fb->stride) >> 3;
+     unsigned int offset = fb->format == FRAMEBUF_MHMSB ? x & 0x07 : 7 - (x & 0x07);
+     ((uint8_t *)fb->buf)[index] = (((uint8_t *)fb->buf)[index] & ~(0x01 << offset)) | ((col != 0) << offset);
+ }
+ 
+ static uint32_t mono_horiz_getpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y) {
+-    size_t index = (x + y * fb->stride) >> 3;
++    size_t index = ((size_t)x + (size_t)y * (size_t)fb->stride) >> 3;
+     unsigned int offset = fb->format == FRAMEBUF_MHMSB ? x & 0x07 : 7 - (x & 0x07);
+     return (((uint8_t *)fb->buf)[index] >> (offset)) & 0x01;
+ }
+@@ -120,15 +120,15 @@ static void mvlsb_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsigne
+ // Functions for RGB565 format
+ 
+ static void rgb565_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, uint32_t col) {
+-    ((uint16_t *)fb->buf)[x + y * fb->stride] = col;
++    ((uint16_t *)fb->buf)[(size_t)x + (size_t)y * (size_t)fb->stride] = col;
+ }
+ 
+ static uint32_t rgb565_getpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y) {
+-    return ((uint16_t *)fb->buf)[x + y * fb->stride];
++    return ((uint16_t *)fb->buf)[(size_t)x + (size_t)y * (size_t)fb->stride];
+ }
+ 
+ static void rgb565_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, unsigned int w, unsigned int h, uint32_t col) {
+-    uint16_t *b = &((uint16_t *)fb->buf)[x + y * fb->stride];
++    uint16_t *b = &((uint16_t *)fb->buf)[(size_t)x + (size_t)y * (size_t)fb->stride];
+     while (h--) {
+         for (unsigned int ww = w; ww; --ww) {
+             *b++ = col;
+@@ -140,7 +140,7 @@ static void rgb565_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsign
+ // Functions for GS2_HMSB format
+ 
+ static void gs2_hmsb_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, uint32_t col) {
+-    uint8_t *pixel = &((uint8_t *)fb->buf)[(x + y * fb->stride) >> 2];
++    uint8_t *pixel = &((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 2];
+     uint8_t shift = (x & 0x3) << 1;
+     uint8_t mask = 0x3 << shift;
+     uint8_t color = (col & 0x3) << shift;
+@@ -148,7 +148,7 @@ static void gs2_hmsb_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsig
+ }
+ 
+ static uint32_t gs2_hmsb_getpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y) {
+-    uint8_t pixel = ((uint8_t *)fb->buf)[(x + y * fb->stride) >> 2];
++    uint8_t pixel = ((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 2];
+     uint8_t shift = (x & 0x3) << 1;
+     return (pixel >> shift) & 0x3;
+ }
+@@ -164,7 +164,7 @@ static void gs2_hmsb_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsi
+ // Functions for GS4_HMSB format
+ 
+ static void gs4_hmsb_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, uint32_t col) {
+-    uint8_t *pixel = &((uint8_t *)fb->buf)[(x + y * fb->stride) >> 1];
++    uint8_t *pixel = &((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 1];
+ 
+     if (x % 2) {
+         *pixel = ((uint8_t)col & 0x0f) | (*pixel & 0xf0);
+@@ -175,15 +175,15 @@ static void gs4_hmsb_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsig
+ 
+ static uint32_t gs4_hmsb_getpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y) {
+     if (x % 2) {
+-        return ((uint8_t *)fb->buf)[(x + y * fb->stride) >> 1] & 0x0f;
++        return ((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 1] & 0x0f;
+     }
+ 
+-    return ((uint8_t *)fb->buf)[(x + y * fb->stride) >> 1] >> 4;
++    return ((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 1] >> 4;
+ }
+ 
+ static void gs4_hmsb_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, unsigned int w, unsigned int h, uint32_t col) {
+     col &= 0x0f;
+-    uint8_t *pixel_pair = &((uint8_t *)fb->buf)[(x + y * fb->stride) >> 1];
++    uint8_t *pixel_pair = &((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride) >> 1];
+     uint8_t col_shifted_left = col << 4;
+     uint8_t col_pixel_pair = col_shifted_left | col;
+     unsigned int pixel_count_till_next_line = (fb->stride - w) >> 1;
+@@ -215,16 +215,16 @@ static void gs4_hmsb_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsi
+ // Functions for GS8 format
+ 
+ static void gs8_setpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, uint32_t col) {
+-    uint8_t *pixel = &((uint8_t *)fb->buf)[(x + y * fb->stride)];
++    uint8_t *pixel = &((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride)];
+     *pixel = col & 0xff;
+ }
+ 
+ static uint32_t gs8_getpixel(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y) {
+-    return ((uint8_t *)fb->buf)[(x + y * fb->stride)];
++    return ((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride)];
+ }
+ 
+ static void gs8_fill_rect(const mp_obj_framebuf_t *fb, unsigned int x, unsigned int y, unsigned int w, unsigned int h, uint32_t col) {
+-    uint8_t *pixel = &((uint8_t *)fb->buf)[(x + y * fb->stride)];
++    uint8_t *pixel = &((uint8_t *)fb->buf)[((size_t)x + (size_t)y * (size_t)fb->stride)];
+     while (h--) {
+         memset(pixel, col, w);
+         pixel += fb->stride;
 @@ -918,7 +918,7 @@ static const mp_rom_map_elem_t framebuf_module_globals_table[] = {
  
  static MP_DEFINE_CONST_DICT(framebuf_module_globals, framebuf_module_globals_table);
@@ -558,10 +659,55 @@ index 116c844e8..1fe9288be 100644
      .globals = (mp_obj_dict_t *)&mp_module_array_globals,
  };
 diff --git a/py/modbuiltins.c b/py/modbuiltins.c
-index 6f085f2df..13c6d190c 100644
+index 6f085f2df..5fc2e9ff4 100644
 --- a/py/modbuiltins.c
 +++ b/py/modbuiltins.c
-@@ -771,7 +771,7 @@ static const mp_rom_map_elem_t mp_module_builtins_globals_table[] = {
+@@ -96,8 +96,13 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_abs_obj, mp_builtin_abs);
+ static mp_obj_t mp_builtin_all(mp_obj_t o_in) {
+     mp_obj_iter_buf_t iter_buf;
+     mp_obj_t iterable = mp_getiter(o_in, &iter_buf);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t item;
+-    while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iterable), &item);
++        if (item == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         if (!mp_obj_is_true(item)) {
+             return mp_const_false;
+         }
+@@ -109,8 +114,13 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_all_obj, mp_builtin_all);
+ static mp_obj_t mp_builtin_any(mp_obj_t o_in) {
+     mp_obj_iter_buf_t iter_buf;
+     mp_obj_t iterable = mp_getiter(o_in, &iter_buf);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t item;
+-    while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iterable), &item);
++        if (item == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         if (mp_obj_is_true(item)) {
+             return mp_const_true;
+         }
+@@ -517,8 +527,13 @@ static mp_obj_t mp_builtin_sum(size_t n_args, const mp_obj_t *args) {
+     }
+     mp_obj_iter_buf_t iter_buf;
+     mp_obj_t iterable = mp_getiter(args[0], &iter_buf);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t item;
+-    while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iterable), &item);
++        if (item == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         value = mp_binary_op(MP_BINARY_OP_ADD, value, item);
+     }
+     return value;
+@@ -771,7 +786,7 @@ static const mp_rom_map_elem_t mp_module_builtins_globals_table[] = {
  
  MP_DEFINE_CONST_DICT(mp_module_builtins_globals, mp_module_builtins_globals_table);
  
@@ -802,8 +948,61 @@ index 5a4d7d27d..82c694a9f 100644
  
              if (adj_exp < MP_FLOAT_FRAC_BITS) {
                  shft = 0;
+diff --git a/py/obj.c b/py/obj.c
+index 26a912fc6..6f540fd29 100644
+--- a/py/obj.c
++++ b/py/obj.c
+@@ -37,6 +37,19 @@
+ #include "py/cstack.h"
+ #include "py/stream.h" // for mp_obj_print
+ 
++// Calypsi 65816 workaround (DECISIONS.md): the compiler sometimes tests a
++// 32-bit call result against zero by OR-ing its halves in the accumulator
++// and then stores the OR-clobbered accumulator as the value's low word
++// ("assignment inside condition" shape). These store helpers move the
++// store into a separate call, so the caller tests a clean memory copy.
++// Called through volatile function pointers because Calypsi also ignores
++// noinline (inlining would reintroduce the fused test).
++static void mp_store_obj_result_impl(mp_obj_t val, mp_obj_t *out) {
++    *out = val;
++}
++void (*volatile mp_store_obj_result)(mp_obj_t, mp_obj_t *) = mp_store_obj_result_impl;
++
++
+ // Allocates an object and also sets type, for mp_obj_malloc{,_var} macros.
+ MP_NOINLINE void *mp_obj_malloc_helper(size_t num_bytes, const mp_obj_type_t *type) {
+     mp_obj_base_t *base = (mp_obj_base_t *)m_malloc(num_bytes);
+@@ -180,7 +193,8 @@ bool mp_obj_is_true(mp_obj_t arg) {
+     } else {
+         const mp_obj_type_t *type = mp_obj_get_type(arg);
+         if (MP_OBJ_TYPE_HAS_SLOT(type, unary_op)) {
+-            mp_obj_t result = MP_OBJ_TYPE_GET_SLOT(type, unary_op)(MP_UNARY_OP_BOOL, arg);
++            mp_obj_t result; // via store helper: Calypsi ora-clobber (DECISIONS.md)
++            mp_store_obj_result(MP_OBJ_TYPE_GET_SLOT(type, unary_op)(MP_UNARY_OP_BOOL, arg), &result);
+             if (result != MP_OBJ_NULL) {
+                 return result == mp_const_true;
+             }
+@@ -616,9 +630,15 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_identity_obj, mp_identity);
+ 
+ bool mp_get_buffer(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
+     const mp_obj_type_t *type = mp_obj_get_type(obj);
+-    if (MP_OBJ_TYPE_HAS_SLOT(type, buffer)
+-        && MP_OBJ_TYPE_GET_SLOT(type, buffer)(obj, bufinfo, flags & MP_BUFFER_RW) == 0) {
+-        return true;
++    if (MP_OBJ_TYPE_HAS_SLOT(type, buffer)) {
++        // result laundered through the store helper: Calypsi fuses the ==0
++        // test into the accumulator and can store the clobbered value
++        // (DECISIONS.md ora-clobber)
++        mp_obj_t res;
++        mp_store_obj_result((mp_obj_t)(uintptr_t)MP_OBJ_TYPE_GET_SLOT(type, buffer)(obj, bufinfo, flags & MP_BUFFER_RW), &res);
++        if (res == (mp_obj_t)(uintptr_t)0) {
++            return true;
++        }
+     }
+     if (flags & MP_BUFFER_RAISE_IF_UNSUPPORTED) {
+         mp_raise_TypeError(MP_ERROR_TEXT("object with buffer protocol required"));
 diff --git a/py/obj.h b/py/obj.h
-index 3c9122a69..bb28cfa51 100644
+index 3c9122a69..98fed65f1 100644
 --- a/py/obj.h
 +++ b/py/obj.h
 @@ -388,25 +388,25 @@ typedef struct _mp_rom_obj_t { mp_const_obj_t o; } mp_rom_obj_t;
@@ -923,6 +1122,15 @@ index 3c9122a69..bb28cfa51 100644
  
  // Constant types, globally accessible
  extern const mp_obj_type_t mp_type_type;
+@@ -1077,6 +1089,8 @@ bool mp_obj_get_complex_maybe(mp_obj_t self_in, mp_float_t *real, mp_float_t *im
+ void mp_obj_get_array(mp_obj_t o, size_t *len, mp_obj_t **items); // *items may point inside a GC block
+ void mp_obj_get_array_fixed_n(mp_obj_t o, size_t len, mp_obj_t **items); // *items may point inside a GC block
+ size_t mp_get_index(const mp_obj_type_t *type, size_t len, mp_obj_t index, bool is_slice);
++// Calypsi ora-clobber workaround, see py/obj.c
++extern void (*volatile mp_store_obj_result)(mp_obj_t, mp_obj_t *);
+ mp_obj_t mp_obj_id(mp_obj_t o_in);
+ mp_obj_t mp_obj_len(mp_obj_t o_in);
+ mp_obj_t mp_obj_len_maybe(mp_obj_t o_in); // may return MP_OBJ_NULL
 diff --git a/py/objarray.c b/py/objarray.c
 index 75bc671c1..3008e4959 100644
 --- a/py/objarray.c
@@ -1069,10 +1277,25 @@ index 901264aca..fbde0e356 100644
          } else {
              mp_raise_ValueError(MP_ERROR_TEXT("can't convert NaN to int"));
 diff --git a/py/objlist.c b/py/objlist.c
-index 41c920511..c26e1db91 100644
+index 41c920511..08429a386 100644
 --- a/py/objlist.c
 +++ b/py/objlist.c
-@@ -511,7 +511,7 @@ static mp_obj_t list_it_iternext(mp_obj_t self_in) {
+@@ -64,8 +64,13 @@ static void list_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t k
+ 
+ static mp_obj_t list_extend_from_iter(mp_obj_t list, mp_obj_t iterable) {
+     mp_obj_t iter = mp_getiter(iterable, NULL);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t item;
+-    while ((item = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iter), &item);
++        if (item == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         mp_obj_list_append(list, item);
+     }
+     return list;
+@@ -511,7 +516,7 @@ static mp_obj_t list_it_iternext(mp_obj_t self_in) {
      }
  }
  
@@ -1081,6 +1304,79 @@ index 41c920511..c26e1db91 100644
      assert(sizeof(mp_obj_list_it_t) <= sizeof(mp_obj_iter_buf_t));
      mp_obj_list_it_t *o = (mp_obj_list_it_t *)iter_buf;
      o->base.type = &mp_type_polymorph_iter;
+diff --git a/py/objmap.c b/py/objmap.c
+index 1911a7510..c18c2570d 100644
+--- a/py/objmap.c
++++ b/py/objmap.c
+@@ -31,8 +31,12 @@
+ 
+ typedef struct _mp_obj_map_t {
+     mp_obj_base_t base;
+-    size_t n_iters;
++    // fun before n_iters: with 16-bit size_t and packed structs the fun
++    // pointer would sit at offset 6, and Calypsi has repeatedly miscompiled
++    // 32-bit accesses to 2-mod-4 struct offsets (see DECISIONS.md). Keeping
++    // pointer fields 4-aligned dodges the codegen roulette.
+     mp_obj_t fun;
++    size_t n_iters;
+     mp_obj_t iters[];
+ } mp_obj_map_t;
+ 
+@@ -41,6 +45,20 @@ static mp_obj_t map_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_
+     mp_obj_map_t *o = mp_obj_malloc_var(mp_obj_map_t, iters, mp_obj_t, n_args - 1, type);
+     o->n_iters = n_args - 1;
+     o->fun = args[0];
++    #ifdef MAP_DEBUG
++    {
++        extern void mb_puts(const char *s);
++        extern void mb_puthex32(unsigned long v);
++        union { mp_obj_t o; unsigned char b[4]; } u;
++        mb_puts("[mk arg0=");
++        u.o = args[0];
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts(" fun=");
++        u.o = o->fun;
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts("]\n");
++    }
++    #endif
+     for (size_t i = 0; i < n_args - 1; i++) {
+         o->iters[i] = mp_getiter(args[i + 1], NULL);
+     }
+@@ -60,6 +78,19 @@ static mp_obj_t map_iternext(mp_obj_t self_in) {
+         }
+         nextses[i] = next;
+     }
++    #ifdef MAP_DEBUG
++    {
++        extern void mb_puts(const char *s);
++        extern void mb_puthex32(unsigned long v);
++        union { mp_obj_t o; unsigned char b[4]; } u;
++        mp_obj_t res = mp_call_function_n_kw(self->fun, self->n_iters, 0, nextses);
++        mb_puts("[it got=");
++        u.o = res;
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts("]\n");
++        return res;
++    }
++    #endif
+     return mp_call_function_n_kw(self->fun, self->n_iters, 0, nextses);
+ }
+ 
+diff --git a/py/objmodule.c b/py/objmodule.c
+index 2ffa7847f..9470e4183 100644
+--- a/py/objmodule.c
++++ b/py/objmodule.c
+@@ -47,7 +47,8 @@ static void module_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kin
+     #if MICROPY_MODULE___FILE__
+     // If we store __file__ to imported modules then try to lookup this
+     // symbol to give more information about the module.
+-    elem = mp_map_lookup(&self->globals->map, MP_OBJ_NEW_QSTR(MP_QSTR___file__), MP_MAP_LOOKUP);
++    // via store helper: Calypsi ora-clobber workaround (DECISIONS.md)
++    mp_store_obj_result((mp_obj_t)mp_map_lookup(&self->globals->map, MP_OBJ_NEW_QSTR(MP_QSTR___file__), MP_MAP_LOOKUP), (mp_obj_t *)&elem);
+     if (elem != NULL) {
+         mp_printf(print, "<module '%s' from '%s'>", module_name, mp_obj_str_get_str(elem->value));
+         return;
 diff --git a/py/objnone.c b/py/objnone.c
 index a8ce8ebfe..635f41137 100644
 --- a/py/objnone.c
@@ -1092,6 +1388,85 @@ index a8ce8ebfe..635f41137 100644
 -const mp_obj_none_t mp_const_none_obj = {{&mp_type_NoneType}};
 +const mp_obj_none_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_none_obj = {{&mp_type_NoneType}};
  #endif
+diff --git a/py/objset.c b/py/objset.c
+index c8fa12a7e..daa8577f2 100644
+--- a/py/objset.c
++++ b/py/objset.c
+@@ -206,8 +206,12 @@ static mp_obj_t set_diff_int(size_t n_args, const mp_obj_t *args, bool update) {
+         } else {
+             mp_set_t *self_set = &((mp_obj_set_t *)MP_OBJ_TO_PTR(self))->set;
+             mp_obj_t iter = mp_getiter(other, NULL);
+-            mp_obj_t next;
+-            while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++            mp_obj_t next; // Calypsi ora-clobber workaround (DECISIONS.md)
++            for (;;) {
++                mp_store_obj_result(mp_iternext(iter), &next);
++                if (next == MP_OBJ_STOP_ITERATION) {
++                    break;
++                }
+                 mp_set_lookup(self_set, next, MP_MAP_LOOKUP_REMOVE_IF_FOUND);
+             }
+         }
+@@ -242,8 +246,13 @@ static mp_obj_t set_intersect_int(mp_obj_t self_in, mp_obj_t other, bool update)
+     mp_obj_set_t *out = MP_OBJ_TO_PTR(mp_obj_new_set(0, NULL));
+ 
+     mp_obj_t iter = mp_getiter(other, NULL);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t next;
+-    while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iter), &next);
++        if (next == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         if (mp_set_lookup(&self->set, next, MP_MAP_LOOKUP)) {
+             set_add(MP_OBJ_FROM_PTR(out), next);
+         }
+@@ -275,8 +284,13 @@ static mp_obj_t set_isdisjoint(mp_obj_t self_in, mp_obj_t other) {
+ 
+     mp_obj_iter_buf_t iter_buf;
+     mp_obj_t iter = mp_getiter(other, &iter_buf);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t next;
+-    while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iter), &next);
++        if (next == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         if (mp_set_lookup(&self->set, next, MP_MAP_LOOKUP)) {
+             return mp_const_false;
+         }
+@@ -381,8 +395,13 @@ static mp_obj_t set_symmetric_difference_update(mp_obj_t self_in, mp_obj_t other
+     check_set_or_frozenset(self_in); // can be frozenset due to call from set_symmetric_difference
+     mp_obj_set_t *self = MP_OBJ_TO_PTR(self_in);
+     mp_obj_t iter = mp_getiter(other_in, NULL);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t next;
+-    while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iter), &next);
++        if (next == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         mp_set_lookup(&self->set, next, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND_OR_REMOVE_IF_FOUND);
+     }
+     return mp_const_none;
+@@ -398,8 +417,13 @@ static MP_DEFINE_CONST_FUN_OBJ_2(set_symmetric_difference_obj, set_symmetric_dif
+ 
+ static void set_update_int(mp_obj_set_t *self, mp_obj_t other_in) {
+     mp_obj_t iter = mp_getiter(other_in, NULL);
++    // mp_store_obj_result: Calypsi ora-clobber workaround (DECISIONS.md)
+     mp_obj_t next;
+-    while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
++    for (;;) {
++        mp_store_obj_result(mp_iternext(iter), &next);
++        if (next == MP_OBJ_STOP_ITERATION) {
++            break;
++        }
+         mp_set_lookup(&self->set, next, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND);
+     }
+ }
 diff --git a/py/objsingleton.c b/py/objsingleton.c
 index c1f102c94..0b3a983f4 100644
 --- a/py/objsingleton.c
@@ -1107,10 +1482,33 @@ index c1f102c94..0b3a983f4 100644
 +const mp_obj_singleton_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_notimplemented_obj = {{&mp_type_singleton}, MP_QSTR_NotImplemented};
  #endif
 diff --git a/py/objstr.c b/py/objstr.c
-index e8b2512a2..7a56a5330 100644
+index e8b2512a2..7629dac12 100644
 --- a/py/objstr.c
 +++ b/py/objstr.c
-@@ -2208,7 +2208,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
+@@ -205,6 +205,22 @@ mp_obj_t mp_obj_str_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_
+             mp_print_t print;
+             vstr_init_print(&vstr, 16, &print);
+             mp_obj_print_helper(&print, args[0], PRINT_STR);
++            #ifdef STRMK_DEBUG
++            {
++                extern void mb_puts(const char *s);
++                extern void mb_puthex32(unsigned long v);
++                union { mp_obj_t o; unsigned char b[4]; } u;
++                mp_obj_t res = mp_obj_new_str_type_from_vstr(type, &vstr);
++                mb_puts("[smk arg=");
++                u.o = args[0];
++                mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++                mb_puts(" res=");
++                u.o = res;
++                mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++                mb_puts("]\n");
++                return res;
++            }
++            #endif
+             return mp_obj_new_str_type_from_vstr(type, &vstr);
+         }
+ 
+@@ -2208,7 +2224,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
      );
  
  // The zero-length bytes object, with data that includes a null-terminating byte
@@ -1119,7 +1517,7 @@ index e8b2512a2..7a56a5330 100644
  
  // Create a str/bytes object using the given data.  New memory is allocated and
  // the data is copied across.  This function should only be used if the type is bytes,
-@@ -2459,7 +2459,7 @@ static mp_obj_t bytes_it_iternext(mp_obj_t self_in) {
+@@ -2459,7 +2475,7 @@ static mp_obj_t bytes_it_iternext(mp_obj_t self_in) {
      }
  }
  
@@ -1155,20 +1553,23 @@ index c9d8e9b31..5ef555232 100644
  mp_obj_t mp_obj_new_tuple(size_t n, const mp_obj_t *items) {
      if (n == 0) {
 diff --git a/py/objtuple.h b/py/objtuple.h
-index 892c5771b..132de94f2 100644
+index 892c5771b..20b65a685 100644
 --- a/py/objtuple.h
 +++ b/py/objtuple.h
-@@ -31,16 +31,28 @@
+@@ -31,16 +31,31 @@
  // type check is done on getiter method to allow tuple, namedtuple, attrtuple
  #define mp_obj_is_tuple_compatible(o) (MP_OBJ_TYPE_GET_SLOT_OR_NULL(mp_obj_get_type(o), iter) == mp_obj_tuple_getiter)
  
 +// vbcc strictly enforces C11 6.7.2.1p3: a struct ending in a flexible array
 +// member may not be a struct member (mp_obj_namedtuple_t embeds a tuple) and
-+// rejects FAM *initializers* (modsys.c's sys.version_info). A fixed bound makes
-+// these ordinary arrays; allocation is offsetof(items)-based so the bound never
-+// affects runtime layout, only sizeof of the rare static instances. The bound
-+// must cover the largest static initializer (modsys: 4 elements).
-+#if defined(__VBCC__)
++// rejects FAM *initializers* (modsys.c's sys.version_info). Calypsi 65816 is
++// worse: it ACCEPTS a FAM initializer and silently emits NOTHING for the
++// array, so every const tuple/attrtuple was 6 bytes of header followed by
++// whatever the linker placed next. A fixed bound makes these ordinary
++// arrays; allocation is offsetof(items)-based so the bound never affects
++// runtime layout, only sizeof of the rare static instances. The bound must
++// cover the largest static initializer (modsys implementation: 3 + fields).
++#if defined(__VBCC__) || defined(__CALYPSI__)
 +#define MP_TUPLE_ITEMS_BOUND (4)
 +#else
 +#define MP_TUPLE_ITEMS_BOUND
@@ -1189,7 +1590,7 @@ index 892c5771b..132de94f2 100644
  } mp_rom_obj_tuple_t;
  
  void mp_obj_tuple_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind);
-@@ -59,7 +71,7 @@ static inline void mp_obj_tuple_get(mp_obj_t self_in, size_t *len, mp_obj_t **it
+@@ -59,7 +74,7 @@ static inline void mp_obj_tuple_get(mp_obj_t self_in, size_t *len, mp_obj_t **it
  extern const mp_obj_type_t mp_type_attrtuple;
  
  #define MP_DEFINE_ATTRTUPLE(tuple_obj_name, fields, nitems, ...) \
@@ -1199,10 +1600,41 @@ index 892c5771b..132de94f2 100644
          .len = nitems, \
          .items = { __VA_ARGS__, MP_ROM_PTR((void *)fields) } \
 diff --git a/py/objtype.c b/py/objtype.c
-index 68a36ff98..afecf9fa0 100644
+index 68a36ff98..676bc4b61 100644
 --- a/py/objtype.c
 +++ b/py/objtype.c
-@@ -1423,8 +1423,16 @@ MP_DEFINE_CONST_OBJ_TYPE(
+@@ -1043,10 +1043,30 @@ static mp_obj_t type_make_new(const mp_obj_type_t *type_in, size_t n_args, size_
+     }
+ }
+ 
++#ifdef TYPECALL_DEBUG
++extern void mb_puts(const char *s);
++extern void mb_puthex32(unsigned long v);
++#endif
+ static mp_obj_t type_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+     // instantiate an instance of a class
+ 
+     mp_obj_type_t *self = MP_OBJ_TO_PTR(self_in);
++    #ifdef TYPECALL_DEBUG
++    {
++        union { const void *p; unsigned char b[4]; } u;
++        mb_puts("[tc self=");
++        u.p = self;
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts(" idx=");
++        mb_puthex32(self->slot_index_make_new);
++        mb_puts(" fn=");
++        u.p = self->slots[self->slot_index_make_new - 1];
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts(" na=");
++        mb_puthex32(n_args);
++        mb_puts("]\n");
++    }
++    #endif
+ 
+     if (!MP_OBJ_TYPE_HAS_SLOT(self, make_new)) {
+         #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_TERSE
+@@ -1423,8 +1443,16 @@ MP_DEFINE_CONST_OBJ_TYPE(
      );
  
  void mp_load_super_method(qstr attr, mp_obj_t *dest) {
@@ -1360,7 +1792,7 @@ index 0cde6062e..150080554 100644
  
  #define QSTR_TOTAL() (MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len)
 diff --git a/py/runtime.c b/py/runtime.c
-index 618e9b5ae..72d5d53a1 100644
+index 618e9b5ae..71b14e26c 100644
 --- a/py/runtime.c
 +++ b/py/runtime.c
 @@ -59,7 +59,7 @@
@@ -1372,6 +1804,21 @@ index 618e9b5ae..72d5d53a1 100644
      .base = { &mp_type_module },
      .globals = (mp_obj_dict_t *)&MP_STATE_VM(dict_main),
  };
+@@ -1297,6 +1297,14 @@ void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
+ 
+ mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+     assert(o_in);
++    // The iter_buf is usually a C stack local, and it becomes an mp_obj_t:
++    // it must satisfy the tagged-pointer alignment (REPR_B: bit 0 clear).
++    // Compilers that don't align stack locals (Calypsi 65816) can pass an
++    // odd buffer, which would be misread as a small int; fall back to heap
++    // allocation in that case. Dead code on aligned platforms.
++    if (((uintptr_t)iter_buf & 1) != 0) {
++        iter_buf = NULL;
++    }
+     const mp_obj_type_t *type = mp_obj_get_type(o_in);
+ 
+     // Most types that use iternext just use the identity getiter. We handle this case explicitly
 diff --git a/py/runtime_utils.c b/py/runtime_utils.c
 index 3b0ae279a..96786c970 100644
 --- a/py/runtime_utils.c

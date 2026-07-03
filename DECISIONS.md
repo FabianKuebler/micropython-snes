@@ -1,5 +1,58 @@
 # Decisions log
 
+## 2026-07-03 (later) — ora-clobber class fixed; nano-gui one widget away
+
+Continuing the safari with the checker-driven method (6/7 pytest green; only
+test_gui red, and the demo now reaches the LED widget after init, colors,
+version check, Label and Meter all work on target).
+
+**Calypsi bug: the ora-clobber.** `while ((x = f(...)) != 0)` (assignment
+inside a null test) sometimes compiles to `jsl f; stx t; ora t; beq ...;
+stx hi; sta lo` — the accumulator holds low|high from the test, and the
+codegen stores it as the value's low word. list(map(str, (7,))) yielded
+[True] because the perfectly good str object's low word got OR-mangled into
+an odd (tagged) value. Whether a site compiles broken is register-pressure
+roulette per build.
+
+Fixes:
+- `mp_store_obj_result` (py/obj.c/h): un-inlinable store helper called via a
+  volatile function pointer (Calypsi ignores noinline AND ignores volatile
+  on locals — a plain `volatile` receiver changed nothing). Flagged sites
+  rewritten to `store(f(...), &x); if (x == SENTINEL) break;` so the caller
+  tests a clean memory copy: objlist list_extend_from_iter, modbuiltins
+  all/any/+1, objset x5, obj.c mp_obj_is_true, objmodule module_print, and
+  **mp_get_buffer** — the last one was heap-corrupting the Writer/framebuf
+  path (a Label rendering made the next print emit garbage). Lesson: do NOT
+  assume a flagged site is benign ("only truthiness") — mp_get_buffer was
+  first triaged as harmless and was actually the worst.
+- checker rule 2 in tools/check_neg_index.py: flags `ora dp` → branch →
+  `sta` with A unrefreshed. Negative-Y hits stay fatal; ora hits warn
+  (4 remain: compile.c, mp_obj_is_true internal, objstr bytes_make_new,
+  str_encode — re-triage against failures, see the lesson above).
+
+**modframebuf 16-bit overflow (upstreamable):** pixel index `x + y*stride`
+computed in int overflows at y>=128 on a 256-wide buffer (16-bit int!) —
+out-of-bounds writes corrupted the heap. All 14 index expressions now use
+size_t arithmetic.
+
+**Calypsi FAM-initializer silent drop, tuple edition:** const
+mp_rom_obj_tuple_t initializers emitted a 6-byte header and NO items
+(sys.implementation read the neighbouring object as its first element).
+Type-object slots had the same bug fixed in an earlier session (obj.h
+slots[12]); tuples now share the vbcc fixed-bound fix
+(MP_TUPLE_ITEMS_BOUND=4 for __CALYPSI__ too, objtuple.h).
+
+**mp_getiter alignment guard** (runtime.c): a C-stack iter_buf with an odd
+address is replaced by heap allocation (REPR_B would misread the object).
+
+OPEN: test_gui — demo stops at LED.__init__ with a bogus arity error
+("function takes 1 positional arguments but 9 were given"); Label/Meter
+pass the identical super().__init__ shape, so this is the next roulette
+site (not among current checker warnings). Method for next session: REPL
+repro (the REPL ROM freezes the gui tree; `import main` reproduces), then
+python-level bisect, then .lst microscope on the C function it lands in.
+
+
 ## 2026-07-03 — THE negative-Y bug: Calypsi far indexing crosses banks (6/6 green)
 
 **Calypsi bug (the big one): `p[-1]` on a far pointer sometimes compiles to

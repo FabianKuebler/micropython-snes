@@ -164,6 +164,30 @@ int main(void)
     mb_putc('\n');
   }
   #endif
+  #ifdef REPL_DEBUG
+  {
+    typedef union { mp_obj_t o; unsigned long u; } ou;
+    ou r;
+    mp_obj_t str_t = MP_OBJ_FROM_PTR(&mp_type_str);
+    mp_obj_t *ha = m_new(mp_obj_t, 1);
+    mp_obj_t sa[2];
+    ha[0] = MP_OBJ_NEW_SMALL_INT(7);
+    r.o = mp_call_function_n_kw(str_t, 1, 0, ha);
+    mb_puts("heap-args:");
+    mb_puthex32(r.u);
+    sa[0] = MP_OBJ_NEW_SMALL_INT(7);
+    r.o = mp_call_function_n_kw(str_t, 1, 0, sa);
+    mb_puts(" stack-args:");
+    mb_puthex32(r.u);
+    r.o = mp_call_function_1(str_t, MP_OBJ_NEW_SMALL_INT(7));
+    mb_puts(" fn1:");
+    mb_puthex32(r.u);
+    mb_putc(0x27);
+    mp_obj_print_helper(&mp_plat_print, mp_call_function_n_kw(str_t, 1, 0, ha), PRINT_STR);
+    mb_putc(0x27);
+    mb_putc(10);
+  }
+  #endif
   out_puts("MicroPython on SNES; ^D exits\n"); // <= 32 cols: no line wrap
   vstr_t line;
   vstr_init(&line, 64);
