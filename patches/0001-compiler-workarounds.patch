@@ -1833,7 +1833,7 @@ index 68a36ff98..676bc4b61 100644
  
  /******************************************************************************/
 diff --git a/py/parse.c b/py/parse.c
-index 1a50b13b5..df291ee24 100644
+index 1a50b13b5..6d7bbbe45 100644
 --- a/py/parse.c
 +++ b/py/parse.c
 @@ -215,9 +215,13 @@ typedef struct _rule_stack_t {
@@ -1852,6 +1852,34 @@ index 1a50b13b5..df291ee24 100644
          struct _mp_parse_chunk_t *next;
      } union_;
      byte data[];
+@@ -802,17 +806,22 @@ static bool fold_constants(parser_t *parser, uint8_t rule_id, size_t num_args) {
+             return false;
+         }
+         mp_token_kind_t tok = MP_PARSE_NODE_LEAF_ARG(peek_result(parser, 1));
+-        mp_unary_op_t op;
++        // Explicit branches with constant op values: Calypsi compiled the
++        // upstream enum arithmetic (op = POSITIVE + (tok - PLUS)) into a
++        // store to one stack slot and a call argument load from another,
++        // so every folded negative literal became ~x instead of -x
++        // (print(-1) -> -2). See DECISIONS.md.
+         if (tok == MP_TOKEN_OP_TILDE) {
+             if (!mp_obj_is_int(arg0)) {
+                 return false;
+             }
+-            op = MP_UNARY_OP_INVERT;
++            arg0 = mp_unary_op(MP_UNARY_OP_INVERT, arg0);
++        } else if (tok == MP_TOKEN_OP_MINUS) {
++            arg0 = mp_unary_op(MP_UNARY_OP_NEGATIVE, arg0);
+         } else {
+-            assert(tok == MP_TOKEN_OP_PLUS || tok == MP_TOKEN_OP_MINUS); // should be
+-            op = MP_UNARY_OP_POSITIVE + (tok - MP_TOKEN_OP_PLUS);
++            assert(tok == MP_TOKEN_OP_PLUS); // should be
++            arg0 = mp_unary_op(MP_UNARY_OP_POSITIVE, arg0);
+         }
+-        arg0 = mp_unary_op(op, arg0);
+ 
+     #if MICROPY_COMP_CONST
+     } else if (rule_id == RULE_expr_stmt) {
 diff --git a/py/parsenum.c b/py/parsenum.c
 index 05bcc0f0a..8ec62cd45 100644
 --- a/py/parsenum.c
