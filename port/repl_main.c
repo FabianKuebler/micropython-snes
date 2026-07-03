@@ -68,20 +68,26 @@ static int in_getc(void)
 // NB: no locals are modified between nlr_push and the exception path
 // (Calypsi drops volatile stores to stack locals in setjmp functions,
 // DECISIONS.md bug 2).
-static void exec_line(vstr_t *line)
+static void exec_input(vstr_t *line, mp_parse_input_kind_t kind)
 {
   nlr_buf_t nlr;
   if (nlr_push(&nlr) == 0) {
     mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_,
                                                 vstr_str(line), line->len, 0);
     qstr source_name = lex->source_name;
-    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
-    mp_obj_t module_fun = mp_compile(&parse_tree, source_name, true);
+    mp_parse_tree_t parse_tree = mp_parse(lex, kind);
+    mp_obj_t module_fun = mp_compile(&parse_tree, source_name,
+                                     kind == MP_PARSE_SINGLE_INPUT);
     mp_call_function_0(module_fun);
     nlr_pop();
   } else {
     mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
   }
+}
+
+static void exec_line(vstr_t *line)
+{
+  exec_input(line, MP_PARSE_SINGLE_INPUT);
 }
 
 // Read one logical input unit (following continuation prompts for compound
@@ -95,6 +101,9 @@ static int read_input(vstr_t *line)
     char c = (char)in_getc();
     if (c == 0x04 && at_line_start && line->len == 0) {
       return 0;
+    }
+    if (c == 0x01 && at_line_start && line->len == 0) {
+      return 2; // raw mode (upstream-test runner): caller collects to ^D
     }
     if (c == '\r') {
       continue;
@@ -194,8 +203,30 @@ int main(void)
   for (;;) {
     vstr_reset(&line);
     out_puts(">>> ");
-    if (!read_input(&line)) {
+    int r = read_input(&line);
+    if (!r) {
       break;
+    }
+    if (r == 2) {
+      // Raw mode, for tools/run_upstream_tests.py: collect source bytes
+      // until ^D with no echo, run as a whole file, bracket the pure test
+      // output in STX/EOT for the host to parse, then reset the
+      // interpreter so tests don't see each other's globals.
+      vstr_reset(&line);
+      for (;;) {
+        int c = in_getc();
+        if (c == 0x04) {
+          break;
+        }
+        vstr_add_byte(&line, (char)c);
+      }
+      mb_putc(0x02);
+      exec_input(&line, MP_PARSE_FILE_INPUT);
+      mb_putc(0x04);
+      mp_deinit();
+      mp_init();
+      vstr_init(&line, 64); // old buffer belongs to the previous interpreter
+      continue;
     }
     if (line.len == 0) {
       continue;

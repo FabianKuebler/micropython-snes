@@ -289,6 +289,48 @@ index 033ac9c76..e532cd80b 100644
  }
  
  id_info_t *mp_emit_common_get_id_for_modification(scope_t *scope, qstr qst);
+diff --git a/py/emitbc.c b/py/emitbc.c
+index 0fbda56fd..aa796e8c0 100644
+--- a/py/emitbc.c
++++ b/py/emitbc.c
+@@ -244,7 +244,12 @@ static void emit_write_bytecode_byte_label(emit_t *emit, int stack_adj, byte b1,
+     // Compute the jump size and offset only when code size is known.
+     if (emit->pass >= MP_PASS_CODE_SIZE) {
+         // The -2 accounts for this jump opcode taking 2 bytes (at least).
+-        bytecode_offset = emit->label_offsets[label] - emit->bytecode_offset - 2;
++        // Widen BEFORE subtracting: with size_t narrower than ssize_t
++        // (16-bit size_t here) the unsigned difference has no sign bit to
++        // wrap into, and a backward jump of -20 arrives as +65516 -> every
++        // loop raised "bytecode overflow".
++        bytecode_offset = (ssize_t)emit->label_offsets[label]
++            - (ssize_t)emit->bytecode_offset - 2;
+ 
+         // Check if the bytecode_offset is small enough to use a 1-byte encoding.
+         if ((is_signed && -64 <= bytecode_offset && bytecode_offset <= 63)
+@@ -273,6 +278,23 @@ static void emit_write_bytecode_byte_label(emit_t *emit, int stack_adj, byte b1,
+             bytecode_offset += 0x4000;
+         }
+         if (emit->pass == MP_PASS_EMIT && !(0 <= bytecode_offset && bytecode_offset <= 0x7fff)) {
++            #ifdef EMIT_DEBUG
++            {
++                extern void mb_puts(const char *s);
++                extern void mb_puthex32(unsigned long v);
++                mb_puts("[ovf lbl=");
++                mb_puthex32(label);
++                mb_puts(" lofs=");
++                mb_puthex32(emit->label_offsets[label]);
++                mb_puts(" bofs=");
++                mb_puthex32(emit->bytecode_offset);
++                mb_puts(" delta=");
++                mb_puthex32((unsigned long)(long)bytecode_offset);
++                mb_puts(" op=");
++                mb_puthex32(b1);
++                mb_puts("]\n");
++            }
++            #endif
+             emit->overflow = true;
+         }
+         c[1] = 0x80 | (bytecode_offset & 0x7f);
 diff --git a/py/formatfloat.c b/py/formatfloat.c
 index 1ea34f84b..2bb7785f8 100644
 --- a/py/formatfloat.c
@@ -1217,49 +1259,69 @@ index 3c9122a69..98fed65f1 100644
  mp_obj_t mp_obj_len(mp_obj_t o_in);
  mp_obj_t mp_obj_len_maybe(mp_obj_t o_in); // may return MP_OBJ_NULL
 diff --git a/py/objarray.c b/py/objarray.c
-index 75bc671c1..3008e4959 100644
+index 75bc671c1..2caf1cbcd 100644
 --- a/py/objarray.c
 +++ b/py/objarray.c
-@@ -53,7 +53,7 @@
+@@ -53,7 +53,11 @@
  #if MICROPY_PY_BUILTINS_MEMORYVIEW
  #define TYPECODE_MASK (0x7f)
  #define memview_offset free
 -#define memview_offset_max ((1LL << MP_OBJ_ARRAY_FREE_SIZE_BITS) - 1)
-+#define memview_offset_max ((size_t)-1) // free is a plain size_t now (see objarray.h)
++#if defined(__CALYPSI__)
++#define memview_offset_max ((size_t)-1) // free is a plain size_t (see objarray.h)
++#else
++#define memview_offset_max (((size_t)1 << (8 * sizeof(size_t) - 8)) - 1)
++#endif
  #else
  // make (& TYPECODE_MASK) a null operation if memorview not enabled
  #define TYPECODE_MASK (~(size_t)0)
 diff --git a/py/objarray.h b/py/objarray.h
-index bb7a514b9..30e777664 100644
+index bb7a514b9..008e27ec7 100644
 --- a/py/objarray.h
 +++ b/py/objarray.h
-@@ -40,14 +40,21 @@
+@@ -40,16 +40,37 @@
  // see comment at the beginning of objarray.c.
  typedef struct _mp_obj_array_t {
      mp_obj_base_t base;
--    size_t typecode : 8;
-+    // Plain fields rather than the upstream size_t bitfields: Calypsi 65816
-+    // miscompiles bitfield accesses, and with 16-bit size_t the free field
-+    // would only get 8 bits anyway (overflows for bytearrays > 255 spare
-+    // elements). Layout stays compatible for all users.
++    #if defined(__CALYPSI__)
++    // Calypsi layout, three constraints at once:
++    //  - no bitfields (Calypsi miscompiles bitfield RMW, and with 16-bit
++    //    size_t the upstream 'free' bitfield would only get 8 bits);
++    //  - 'len' and 'items' must sit at the same offsets as mp_obj_str_t's
++    //    'len' and 'data' (generic code aliases the two structs; enforced
++    //    by a static assert in py/runtime.c) -> typecode+pad fill the
++    //    2-byte hash slot and 'free' moves to the end;
++    //  - 'items' must sit at an even offset: the GC heap scan visits only
++    //    even offsets, and with items at offset 9 every bytearray whose
++    //    backing store had no other reference was collected while alive
++    //    (SSD.lut read back as recycled qstr text).
++    // 'free' is the number of unused elements after len used elements
++    // (alloc size = len + free); for memoryview it's reused as the offset
++    // in elements into the parent object. See comments in objarray.c.
 +    uint8_t typecode;
-+    // Explicit padding: without it (Calypsi packs structs) the items pointer
-+    // lands at offset 9, and the GC heap scan only visits even offsets —
-+    // every bytearray whose backing store had no other reference was
-+    // collected out from under it (SSD.lut read back as recycled qstr text).
-+    uint8_t pad_gc_align;
++    uint8_t pad_hash_slot;
++    size_t len; // in elements
++    void *items;
++    size_t free;
++    #else
++    // Upstream layout (bitfields keep len/items aligned with mp_obj_str_t)
+     size_t typecode : 8;
      // free is number of unused elements after len used elements
      // alloc size = len + free
-     // But for memoryview, 'free' is reused as offset (in elements) into the
+-    // But for memoryview, 'free' is reused as offset (in elements) into the
 -    // parent object. (Union is not used to not go into a complication of
 -    // union-of-bitfields with different toolchains). See comments in
 -    // objarray.c.
 -    size_t free : MP_OBJ_ARRAY_FREE_SIZE_BITS;
++    // For memoryview, 'free' is reused as offset (in elements) into the
 +    // parent object. See comments in objarray.c.
-+    size_t free;
++    size_t free : (8 * sizeof(size_t) - 8);
      size_t len; // in elements
      void *items;
++    #endif
  } mp_obj_array_t;
+ 
+ #if MICROPY_PY_BUILTINS_MEMORYVIEW
 diff --git a/py/objbool.c b/py/objbool.c
 index 5b3e3660e..f460d763b 100644
 --- a/py/objbool.c
