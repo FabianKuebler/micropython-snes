@@ -112,6 +112,54 @@ index 593125aa1..82cdfb280 100644
      .base = { &mp_type_module },
      .globals = (mp_obj_dict_t *)&framebuf_module_globals,
  };
+diff --git a/py/bc.c b/py/bc.c
+index 7669365ce..64e7373ca 100644
+--- a/py/bc.c
++++ b/py/bc.c
+@@ -301,6 +301,9 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
+     const uint8_t *ip = code_state->ip + n_info;
+ 
+     // bytecode prelude: initialise closed over variables
++    #ifdef BC_DEBUG
++    size_t dbg_n_cell = n_cell;
++    #endif
+     for (; n_cell; --n_cell) {
+         size_t local_num = *ip++;
+         code_state_state[n_state - 1 - local_num] =
+@@ -310,6 +313,33 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
+     // now that we skipped over the prelude, set the ip for the VM
+     code_state->ip = ip;
+ 
++    #ifdef BC_DEBUG
++    if (n_args > 0 && code_state_state[n_state - 1] != args[0]) {
++        extern void mb_puts(const char *s);
++        extern void mb_puthex32(unsigned long v);
++        union { mp_obj_t o; unsigned char b[4]; } u;
++        mb_puts("[bc! nst=");
++        mb_puthex32(n_state);
++        mb_puts(" na=");
++        mb_puthex32(n_args);
++        mb_puts(" npos=");
++        mb_puthex32(n_pos_args);
++        mb_puts(" nkw=");
++        mb_puthex32(n_kwonly_args);
++        mb_puts(" ncell=");
++        mb_puthex32(dbg_n_cell);
++        mb_puts(" ninfo=");
++        mb_puthex32(n_info);
++        mb_puts(" s0=");
++        u.o = code_state_state[n_state - 1];
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts(" a0=");
++        u.o = args[0];
++        mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++        mb_puts("]\n");
++    }
++    #endif
++
+     DEBUG_printf("Calling: n_pos_args=%d, n_kwonly_args=%d\n", n_pos_args, n_kwonly_args);
+     dump_args(code_state_state + n_state - n_pos_args - n_kwonly_args, n_pos_args + n_kwonly_args);
+     dump_args(code_state_state, n_state);
 diff --git a/py/binary.c b/py/binary.c
 index ef2857b43..3b9fcd87d 100644
 --- a/py/binary.c
@@ -255,7 +303,7 @@ index 1ea34f84b..2bb7785f8 100644
  
  #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
 diff --git a/py/gc.c b/py/gc.c
-index 5fe26ef89..d2eb93dd7 100644
+index 5fe26ef89..da6aa19ae 100644
 --- a/py/gc.c
 +++ b/py/gc.c
 @@ -186,8 +186,19 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
@@ -280,7 +328,7 @@ index 5fe26ef89..d2eb93dd7 100644
      assert(area->gc_pool_start >= next_table);
  
      // Clear ATB's, and FTB's and WTB's if they are enabled.
-@@ -443,10 +454,20 @@ void gc_collect_start(void) {
+@@ -443,10 +454,23 @@ void gc_collect_start(void) {
      // Trace root pointers.  This relies on the root pointers being organised
      // correctly in the mp_state_ctx structure.  We scan nlr_top, dict_locals,
      // dict_globals, then the root pointer section of mp_state_vm.
@@ -293,8 +341,12 @@ index 5fe26ef89..d2eb93dd7 100644
 +    // twice, phase-shifted by 2 bytes, so every 2-aligned pointer-sized
 +    // field is visited; the extra scan only over-marks (conservative GC).
      size_t root_start = offsetof(mp_state_ctx_t, thread.dict_locals);
-     size_t root_end = offsetof(mp_state_ctx_t, vm.qstr_last_chunk);
+-    size_t root_end = offsetof(mp_state_ctx_t, vm.qstr_last_chunk);
 -    gc_collect_root(ptrs + root_start / sizeof(void *), (root_end - root_start) / sizeof(void *));
++    // include qstr_last_chunk itself: a fresh chunk with no interned qstr
++    // yet has no pool entry pointing into it, so this root is its only
++    // reference (upstream excludes it and relies on pool reachability)
++    size_t root_end = offsetof(mp_state_ctx_t, vm.qstr_last_chunk) + sizeof(char *);
 +    void **ptrs = (void **)(void *)((char *)&mp_state_ctx + root_start);
 +    gc_collect_root(ptrs, (root_end - root_start) / sizeof(void *));
 +    #if MICROPY_GC_UNALIGNED_ROOT_SECTION
@@ -303,7 +355,40 @@ index 5fe26ef89..d2eb93dd7 100644
  
      #if MICROPY_ENABLE_PYSTACK
      // Trace root pointers from the Python stack.
-@@ -844,21 +865,13 @@ void gc_weakref_mark(void *ptr) {
+@@ -520,8 +544,22 @@ static void gc_mark_subtree(size_t block)
+         assert(area->gc_pool_start + (block + n_blocks) * BYTES_PER_BLOCK <= area->gc_pool_end);
+ 
+         // check this block's children
++        // On packed 16-bit-size_t builds (Calypsi 65816) heap objects hold
++        // pointers at 2-mod-4 offsets too (inline tuple items after a
++        // 2-byte len, qstr pool entry arrays, ...). Scan each block twice,
++        // phase-shifted by 2 bytes, like the root-section scan: a missed
++        // child pointer means the collector frees live objects (observed:
++        // the current qstr chunk, reached only via pool entries at odd
++        // phase, was reused as a code_state and interning corrupted it).
++        // The extra pass only over-marks (conservative GC).
++        #if MICROPY_GC_UNALIGNED_ROOT_SECTION
++        for (size_t phase = 0; phase <= 2; phase += 2) {
++        void **ptrs = (void **)(void *)((char *)PTR_FROM_BLOCK(area, block) + phase);
++        for (size_t i = (n_blocks * BYTES_PER_BLOCK - phase) / sizeof(void *); i > 0; i--, ptrs++) {
++        #else
+         void **ptrs = (void **)PTR_FROM_BLOCK(area, block);
+         for (size_t i = n_blocks * BYTES_PER_BLOCK / sizeof(void *); i > 0; i--, ptrs++) {
++        #endif
+             MICROPY_GC_HOOK_LOOP(i);
+             void *ptr = *ptrs;
+             // If this is a heap pointer that hasn't been marked, mark it and push
+@@ -556,6 +594,9 @@ static void gc_mark_subtree(size_t block)
+                 MP_STATE_MEM(gc_stack_overflow) = 1;
+             }
+         }
++        #if MICROPY_GC_UNALIGNED_ROOT_SECTION
++        }
++        #endif
+ 
+         // Are there any blocks on the stack?
+         if (sp == 0) {
+@@ -844,21 +885,13 @@ void gc_weakref_mark(void *ptr) {
  }
  #endif
  
@@ -332,7 +417,7 @@ index 5fe26ef89..d2eb93dd7 100644
      GC_ENTER();
  
      mp_state_mem_area_t *area;
-@@ -866,69 +879,41 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+@@ -866,69 +899,41 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
      size_t end_block;
      size_t start_block;
      size_t n_free;
@@ -429,7 +514,7 @@ index 5fe26ef89..d2eb93dd7 100644
      // found, ending at block i inclusive
  found:
      // get starting and end blocks, both inclusive
-@@ -1001,6 +986,58 @@ found:
+@@ -1001,6 +1006,58 @@ found:
      return ret_ptr;
  }
  
@@ -1145,10 +1230,10 @@ index 75bc671c1..3008e4959 100644
  // make (& TYPECODE_MASK) a null operation if memorview not enabled
  #define TYPECODE_MASK (~(size_t)0)
 diff --git a/py/objarray.h b/py/objarray.h
-index bb7a514b9..a046fb7ae 100644
+index bb7a514b9..30e777664 100644
 --- a/py/objarray.h
 +++ b/py/objarray.h
-@@ -40,14 +40,16 @@
+@@ -40,14 +40,21 @@
  // see comment at the beginning of objarray.c.
  typedef struct _mp_obj_array_t {
      mp_obj_base_t base;
@@ -1158,6 +1243,11 @@ index bb7a514b9..a046fb7ae 100644
 +    // would only get 8 bits anyway (overflows for bytearrays > 255 spare
 +    // elements). Layout stays compatible for all users.
 +    uint8_t typecode;
++    // Explicit padding: without it (Calypsi packs structs) the items pointer
++    // lands at offset 9, and the GC heap scan only visits even offsets —
++    // every bytearray whose backing store had no other reference was
++    // collected out from under it (SSD.lut read back as recycled qstr text).
++    uint8_t pad_gc_align;
      // free is number of unused elements after len used elements
      // alloc size = len + free
      // But for memoryview, 'free' is reused as offset (in elements) into the
@@ -1183,6 +1273,33 @@ index 5b3e3660e..f460d763b 100644
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_false_obj = {{&mp_type_bool}, false};
 +const mp_obj_bool_t MICROPY_OBJ_BASE_ALIGNMENT mp_const_true_obj = {{&mp_type_bool}, true};
  #endif
+diff --git a/py/objclosure.c b/py/objclosure.c
+index 3ba507b95..0475d8bb0 100644
+--- a/py/objclosure.c
++++ b/py/objclosure.c
+@@ -53,6 +53,22 @@ static mp_obj_t closure_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const
+         mp_obj_t *args2 = m_new(mp_obj_t, n_total);
+         memcpy(args2, self->closed, self->n_closed * sizeof(mp_obj_t));
+         memcpy(args2 + self->n_closed, args, (n_args + 2 * n_kw) * sizeof(mp_obj_t));
++        #ifdef CLOSURE_DEBUG
++        {
++            extern void mb_puts(const char *s);
++            extern void mb_puthex32(unsigned long v);
++            union { mp_obj_t o; unsigned char b[4]; } u;
++            mb_puts("[clo n=");
++            mb_puthex32(self->n_closed);
++            mb_puts(" c0=");
++            u.o = self->closed[0];
++            mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++            mb_puts(" a0=");
++            u.o = args2[0];
++            mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
++            mb_puts("]\n");
++        }
++        #endif
+         mp_obj_t res = mp_call_function_n_kw(self->fun, self->n_closed + n_args, n_kw, args2);
+         m_del(mp_obj_t, args2, n_total);
+         return res;
 diff --git a/py/objdict.c b/py/objdict.c
 index 692a7de42..7fc4f5e95 100644
 --- a/py/objdict.c

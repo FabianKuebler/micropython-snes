@@ -127,9 +127,14 @@ static mp_obj_t snesfb_init(void)
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(snesfb_init_obj, snesfb_init);
 
-// palette(idx, bgr555): program CGRAM entry. Written immediately (a write
-// during active display can glitch one scanline of one frame; callers
-// normally follow up with show() anyway).
+// palette(idx, bgr555): program CGRAM entry. Writes go to a shadow table;
+// show() applies it at the start of its first vblank window. CGRAM writes
+// during active display land at whatever address the PPU is rendering from
+// (scrambled palette on hardware and accurate emulators), so they must be
+// deferred to vblank.
+static uint16_t cg_shadow[16];
+static uint8_t cg_dirty;
+
 static mp_obj_t snesfb_palette(mp_obj_t idx_in, mp_obj_t val_in)
 {
   mp_int_t idx = mp_obj_get_int(idx_in);
@@ -137,9 +142,8 @@ static mp_obj_t snesfb_palette(mp_obj_t idx_in, mp_obj_t val_in)
   if (idx < 0 || idx > 15) {
     mp_raise_ValueError(MP_ERROR_TEXT("palette index 0-15"));
   }
-  CGADD = (uint8_t)idx;
-  CGDATA = (uint8_t)val;
-  CGDATA = (uint8_t)((val >> 8) & 0x7F);
+  cg_shadow[idx] = (uint16_t)(val & 0x7FFF);
+  cg_dirty = 1;
   return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(snesfb_palette_obj, snesfb_palette);
@@ -186,11 +190,21 @@ static mp_obj_t snesfb_show(mp_obj_t buf_in)
     }
   }
 
-  // upload in vblank-sized chunks (4KB fits comfortably in one vblank)
+  // upload in vblank-sized chunks (4KB fits comfortably in one vblank);
+  // a pending palette goes out at the start of the first window
   {
     uint16_t off;
+    uint8_t i;
     for (off = 0; off < FB_STAGE_BYTES; off += 4096) {
       wait_vblank();
+      if (cg_dirty) {
+        CGADD = 0;
+        for (i = 0; i < 16; i++) {
+          CGDATA = (uint8_t)cg_shadow[i];
+          CGDATA = (uint8_t)(cg_shadow[i] >> 8);
+        }
+        cg_dirty = 0;
+      }
       vram_dma(VRAM_CHARBASE + off / 2, &fb_stage[off], 4096);
     }
   }

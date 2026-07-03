@@ -11,9 +11,9 @@ from conftest import ROOT, STATUS_PASS, build, run_rom
 
 EXPECTED = """\
 nanogui: init ok
-nanogui: frame 0 value 0.1
+nanogui: frame 0 value 0.10
 nanogui: frame 1 value 0.45
-nanogui: frame 2 value 0.8
+nanogui: frame 2 value 0.80
 nanogui: done
 """
 

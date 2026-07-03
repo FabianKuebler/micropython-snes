@@ -1,5 +1,55 @@
 # Decisions log
 
+## 2026-07-03 — M7 GREEN: nano-gui on the SNES (7/7). THE GC marker bug.
+
+pytest 7/7. The demo renders pixel-faithfully: Meter, red LED, cyan Dial
+with red pointer, Labels, CWriter/arial10 — black background, correct
+palette. Screenshot: nanogui_snes.png.
+
+**THE systemic find — GC marker misses unaligned interior pointers.**
+gc_mark_subtree scans heap block children at aligned 4-byte strides. With
+16-bit size_t and packed structs, heap objects hold pointers at 2-mod-4
+offsets (inline tuple items after the 2-byte len, qstr pool entry arrays)
+and even ODD offsets (mp_obj_array_t items at 9, after a uint8_t typecode).
+Any object whose ONLY reference lived at such an offset was collected while
+alive. Observed kills, each with a distinct symptom:
+- the current qstr chunk (reachable only via pool entries at odd phase +
+  a root deliberately excluded upstream) — reused as a code_state; the next
+  qstr intern memcpy'd string bytes over a frame's closure cell -> the
+  "NameError: local variable referenced before assignment" at
+  super().__init__ in frozen runs (the LED/label hunt);
+- every bytearray's backing store (items ptr at offset 9 — invisible even
+  to a dual-phase scan) -> SSD.lut read back recycled qstr text ("palette"
+  fragments) -> psychedelic CGRAM.
+Fixes: gc_mark_subtree scans each block twice, phase-shifted by 2 (like the
+root-section scan; conservative over-marking only), guarded by
+MICROPY_GC_UNALIGNED_ROOT_SECTION; root scan extended to include
+qstr_last_chunk itself (fresh chunk has no pool entry yet); objarray.h gets
+one explicit pad byte so items sits at a scanned offset. Rule for the port:
+**no pointer field may sit at an odd struct offset in a heap object** —
+pad after lone uint8_t members.
+
+Debug chain worth remembering: python-level probe (which local is unbound)
+-> C-level probe (vm_load_check dump: slot value bank-stripped-looking) ->
+closure trace (cell pointer perfect at every stage) -> bc.c end-of-setup
+tripwire (slot correct after setup!) -> Mesen write-trap on the slot
+address -> PCs symbolized to qstr_from_strn+memcpy -> the GC.
+
+**snesfb palette now vblank-deferred.** CGRAM writes during active display
+land at whatever address the PPU is rendering from (hardware + accurate
+emulators). palette() writes a shadow; show() applies it at the start of
+its first vblank window before the VRAM DMA chunks.
+
+Minor: main_gui prints "%.2f" values (mpy-cross double->float32 truncation
+made repr ragged: 0.44999984); test_gui EXPECTED updated (0.10/0.45/0.80).
+
+OPEN (parked): on-target REPL raised "RuntimeError: bytecode overflow"
+compiling a 2-line for loop (`for i in range(16): snesfb.palette(...)`)
+— worked around by unrolling; compiler-side, not runtime; investigate
+someday. The 4 ora-clobber WARNs (bytes_make_new, str_encode, mp_compile
+region, mp_obj_is_true internal) remain under watch.
+
+
 ## 2026-07-03 (later) — ora-clobber class fixed; nano-gui one widget away
 
 Continuing the safari with the checker-driven method (6/7 pytest green; only

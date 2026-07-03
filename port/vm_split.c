@@ -213,6 +213,22 @@ static vm_status_t vm_local_name_error(vm_ctx_t *c) {
 // original label: load_check
 static vm_status_t vm_load_check(vm_ctx_t *c, mp_obj_t obj_shared) {
     if (obj_shared == MP_OBJ_NULL) {
+        #ifdef DEREF_DEBUG
+        {
+            extern void mb_puts(const char *s);
+            extern void mb_puthex32(unsigned long v);
+            union { const void *p; unsigned char b[4]; } u;
+            mb_puts("[loadchk NULL op=");
+            mb_puthex32(c->opcode);
+            mb_puts(" ip=");
+            u.p = c->ip;
+            mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
+            mb_puts(" fastn=");
+            u.p = c->fastn;
+            mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
+            mb_puts("]\n");
+        }
+        #endif
         return vm_local_name_error(c);
     }
     PUSH(obj_shared);
@@ -343,6 +359,32 @@ static vm_status_t op_load_fast_n(vm_ctx_t *c) {
 
 static vm_status_t op_load_deref(vm_ctx_t *c) {
     DECODE_UINT;
+    #ifdef DEREF_DEBUG
+    {
+        extern void mb_puts(const char *s);
+        extern void mb_puthex32(unsigned long v);
+        mp_obj_t slot = *vm_ptr_at(c->fastn, -(int)unum);
+        mp_obj_t val = mp_obj_cell_get(slot);
+        if (val == MP_OBJ_NULL) {
+            union { mp_obj_t o; unsigned char b[4]; } u;
+            mb_puts("[deref NULL unum=");
+            mb_puthex32(unum);
+            mb_puts(" slot=");
+            u.o = slot;
+            mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
+            if (mp_obj_is_obj(slot)) {
+                const mp_obj_base_t *cb = (const mp_obj_base_t *)MP_OBJ_TO_PTR(slot);
+                mb_puts(" type=");
+                u.o = (mp_obj_t)cb->type;
+                mb_puthex32(u.b[2]); mb_puthex32(u.b[1]); mb_puthex32(u.b[0]);
+            } else {
+                mb_puts(" notobj");
+            }
+            mb_puts("]\n");
+        }
+        return vm_load_check(c, val);
+    }
+    #endif
     return vm_load_check(c, mp_obj_cell_get(*vm_ptr_at(c->fastn, -(int)unum)));
 }
 

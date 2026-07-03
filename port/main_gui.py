@@ -38,6 +38,6 @@ for i, v in enumerate(steps):
     ptr.value(0.4 + 0.4j * (i + 1) / 3, RED)
     val_lbl.value("v={}".format(v))
     refresh(ssd)
-    print("nanogui: frame", i, "value", v)
+    print("nanogui: frame", i, "value", "%.2f" % v)
 
 print("nanogui: done")
