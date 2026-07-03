@@ -770,7 +770,13 @@ static vm_status_t op_store_comp(vm_ctx_t *c) {
     if ((unum & 3) == 0) {
         mp_obj_list_append(obj, c->sp[0]);
         c->sp--;
-    } else if (!MICROPY_PY_BUILTINS_SET || (unum & 3) == 1) {
+    // #if instead of `!MICROPY_PY_BUILTINS_SET ||` (Calypsi folds it to
+    // constant TRUE, see DECISIONS.md)
+    #if !MICROPY_PY_BUILTINS_SET
+    } else if (1) {
+    #else
+    } else if ((unum & 3) == 1) {
+    #endif
         mp_obj_dict_store(obj, c->sp[0], SP_AT(c, -1));
         c->sp -= 2;
     #if MICROPY_PY_BUILTINS_SET

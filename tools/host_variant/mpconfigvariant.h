@@ -20,3 +20,5 @@
 #define MICROPY_KBD_EXCEPTION (1)
 // match the target: no arbitrary-precision ints on the SNES (yet)
 #define MICROPY_LONGINT_IMPL (MICROPY_LONGINT_IMPL_NONE)
+// match the target: no io module
+#define MICROPY_PY_IO (0)
