@@ -23,7 +23,8 @@ Label(wri, 2, 2, "MicroPython nano-gui on SNES")
 
 meter = Meter(wri, 20, 8, height=100, width=16, divisions=4,
               legends=("0", "50", "100"), label="pwr")
-led = LED(wri, 20, 60, height=16, fgcolor=YELLOW)
+led = LED(wri, 20, 60)  # kwargs form hits an open Calypsi roulette site
+led.color(YELLOW)
 dial = Dial(wri, 20, 120, height=100, ticks=12, fgcolor=CYAN,
             label="clock")
 ptr = Pointer(dial)
