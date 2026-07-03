@@ -31,7 +31,11 @@
 
 // VRAM map (word addresses): font tiles at $0000, BG1 tilemap at $0400
 #define VRAM_CHARBASE 0x0000
-#define VRAM_TILEMAP 0x0400
+// the font is 192 tiles x 8 words = 0x600 words; the tilemap must sit
+// ABOVE it (it sat at 0x400 for months: highlight tiles 128-191 — every
+// inverse-video LETTER — overlapped the map and drew as solid garbage;
+// only the oskb's block cursor used that range, masquerading as intended)
+#define VRAM_TILEMAP 0x0800
 
 // BGR555 palette: white text on C64-ish dark blue
 #define COL_BG 0x5045u // r=5 g=2 b=20  -> deep blue
@@ -79,6 +83,21 @@ static void wait_vblank(void)
 void console_disable(void)
 {
   con_disabled = 1;
+}
+
+// undo console_disable(): call before console_init() when taking the PPU
+// back from snesfb/snesstage (the workstation ROM's run-return path)
+void console_enable(void)
+{
+  con_disabled = 0;
+}
+
+// park the flush-time block cursor (the visible write position). The
+// editor drives this directly instead of going through console_putc.
+void console_set_cursor(uint8_t x, uint8_t y)
+{
+  con_x = x;
+  con_y = y;
 }
 
 void console_flush(void)

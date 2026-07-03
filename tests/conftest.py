@@ -42,13 +42,23 @@ def mesen_env(tmp_path_factory):
     settings = cfgroot / "Mesen2" / "settings.json"
     s = json.loads(settings.read_text(encoding="utf-8-sig"))
     s["Debug"]["ScriptWindow"]["AllowIoOsAccess"] = True
-    s["Debug"]["ScriptWindow"]["ScriptTimeout"] = 120
+    s["Debug"]["ScriptWindow"]["ScriptTimeout"] = 600
     settings.write_text(json.dumps(s, indent=2), encoding="utf-8-sig")
     env = dict(os.environ,
                XDG_CONFIG_HOME=str(cfgroot),
                DOTNET_SYSTEM_GLOBALIZATION_INVARIANT="1",
                SDL_VIDEODRIVER="dummy")
     return env
+
+
+def clear_srm(mesen_env):
+    """Delete battery saves under the session Mesen config (Mesen2/Saves/
+    *.srm). The mesen_env fixture is session-scoped, so SRAM-backed ROMs
+    would otherwise leak state between tests."""
+    saves = Path(mesen_env["XDG_CONFIG_HOME"]) / "Mesen2" / "Saves"
+    if saves.is_dir():
+        for f in saves.glob("*.srm"):
+            f.unlink()
 
 
 def build(*targets):

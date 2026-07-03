@@ -24,6 +24,10 @@ $(BUILD):
 $(BUILD)/header.o: snes/header.s | $(BUILD)
 	$(AS) -o $@ $< $(AFLAGS)
 
+# header variant with 32KB battery SRAM (workstation ROMs only)
+$(BUILD)/header_sram.o: snes/header_sram.s | $(BUILD)
+	$(AS) -o $@ $< $(AFLAGS)
+
 $(BUILD)/%.o: snes/%.c snes/mailbox.h | $(BUILD)
 	$(CC) -o $@ $< $(CFLAGS)
 
@@ -38,6 +42,20 @@ $(BUILD)/hello.raw: $(SNES_OBJS) $(BUILD)/hello_main.o
 
 $(BUILD)/selftest.raw: $(SNES_OBJS) $(BUILD)/selftest_main.o
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/selftest.map $^
+
+# ---- M9: battery-SRAM filesystem selftest (C only, fast iteration) ---------
+
+.PHONY: sramtest
+sramtest: $(BUILD)/sramtest.sfc
+
+$(BUILD)/sramtest_main.o: m9_sramtest/main.c snes/mailbox.h snes/sram_fs.h | $(BUILD)
+	$(CC) -o $@ $< $(CFLAGS)
+
+$(BUILD)/sram_fs.o: snes/sram_fs.c snes/sram_fs.h | $(BUILD)
+	$(CC) -o $@ $< $(CFLAGS)
+
+$(BUILD)/sramtest.raw: $(BUILD)/header_sram.o $(BUILD)/mailbox.o $(BUILD)/sram_fs.o $(BUILD)/sramtest_main.o
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/sramtest.map $^
 
 $(BUILD)/%.sfc: $(BUILD)/%.raw tools/raw2sfc.py
 	python3 tools/raw2sfc.py $< $@
@@ -117,8 +135,8 @@ $(VMSTAMP): | $(GENHDR)
 	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
             $(addprefix $(MPTOP)/extmod/,$(EXTMOD_SRC_NAMES)) \
-            $(PORT)/main.c $(PORT)/repl_main.c $(PORT)/modsnesfb.c \
-            $(PORT)/modsnesstage.c
+            $(PORT)/main.c $(PORT)/repl_main.c $(PORT)/pyexec.c \
+            $(PORT)/os_main.c $(PORT)/modsnesfb.c $(PORT)/modsnesstage.c
 
 .PHONY: mpy patch-micropython
 mpy: $(BUILD)/mpy.sfc
@@ -317,6 +335,45 @@ $(BUILD)/mpystage.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_stage.o
 	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpystage.map $(MPBUILD)/frozen_content_stage.lst
 	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
+# ---- M9: mpyos — the all-in-one workstation ROM -----------------------------
+# Boots into a C file manager over battery SRAM (header_sram.o); runs SRAM
+# files and the frozen Stage demo (frozen as demo_stage, NOT main — two
+# frozen "main.py" trees would collide in mp_frozen_names); C full-screen
+# editor; shared REPL via pyexec.o.
+
+$(MPBUILD)/os_main.o: $(PORT)/os_main.c $(PORT)/pyexec.h $(PORT)/mpconfigport.h \
+                      snes/mailbox.h snes/sram_fs.h snes/fileman.h snes/editor.h $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(BUILD)/fileman.o $(BUILD)/editor.o: snes/console.h snes/sram_fs.h snes/fileman.h
+$(BUILD)/editor.o: snes/editor.h snes/oskb.h
+
+OS_MPY := $(MPBUILD)/os_mpy/demo_stage.mpy \
+          $(MPBUILD)/stage_mpy/stage.mpy $(MPBUILD)/stage_mpy/stage_assets.mpy
+
+$(MPBUILD)/os_mpy/demo_stage.mpy: $(PORT)/main_stage.py $(MPY_CROSS) | $(GENHDR)
+	@mkdir -p $(dir $@)
+	$(MPY_CROSS) -o $@ -s demo_stage.py $<
+
+$(MPBUILD)/frozen_content_os.c: $(OS_MPY) $(GENHDR)/qstrdefs.generated.h
+	$(PYTHON) $(MPTOP)/tools/mpy-tool.py -f -q $(GENHDR)/qstrdefs.preprocessed.h \
+	  -mlongint-impl=none $(OS_MPY) > $@
+
+$(MPBUILD)/frozen_content_os.o: $(MPBUILD)/frozen_content_os.c
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+OS_OBJS := $(filter-out $(MPBUILD)/main.o $(BUILD)/header.o,$(PORT_OBJS)) \
+           $(BUILD)/header_sram.o $(MPBUILD)/os_main.o $(MPBUILD)/pyexec.o \
+           $(BUILD)/sram_fs.o $(BUILD)/fileman.o $(BUILD)/editor.o
+
+.PHONY: mpyos
+mpyos: $(BUILD)/mpyos.sfc
+
+$(BUILD)/mpyos.raw: $(PY_OBJS) $(OS_OBJS) $(MPBUILD)/frozen_content_os.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyos.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyos.map $(MPBUILD)/frozen_content_os.lst
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
+
 # ---- M5: interactive REPL (compiler runs on the 65816) ----------------------
 # Same core objects but port/repl_main.c as main; frozen_content.o is still
 # linked because qstr.c references the frozen qstr pool (it is not executed).
@@ -324,7 +381,10 @@ $(BUILD)/mpystage.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_stage.o
 .PHONY: mpyrepl
 mpyrepl: $(BUILD)/mpyrepl.sfc
 
-$(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/mpconfigport.h snes/mailbox.h $(GENERATED)
+$(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/pyexec.h $(PORT)/mpconfigport.h snes/mailbox.h $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(MPBUILD)/pyexec.o: $(PORT)/pyexec.c $(PORT)/pyexec.h $(PORT)/mpconfigport.h snes/mailbox.h snes/console.h $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
 # PPU text console + on-screen keyboard (REPL ROM only)
@@ -337,7 +397,8 @@ $(MPBUILD)/font_tiles.o: $(MPBUILD)/font_tiles.c
 $(BUILD)/console.o $(BUILD)/oskb.o: snes/console.h
 
 
-REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
+REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o \
+             $(MPBUILD)/pyexec.o
 
 # The REPL ROM freezes the nano-gui package tree (frozen_content_gui), so
 # the GUI can be driven interactively; its frozen main.py is never executed.

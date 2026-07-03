@@ -277,6 +277,17 @@ Since then, the same day:
   (was 117s), per-frame cost now scales with sprite count, not pixels.
   Screenshot: `stage_snes.png`; measurement: `tools/measure_stage.py`
   (frame-stamped mailbox log under Mesen).
+- **M9 (2026-07-04): the workstation ROM.** `mpyos.sfc` boots into a C
+  file manager over 32KB battery SRAM: Python files listed next to the
+  frozen [ROM] demos, edited in a C full-screen editor typed on the
+  joypad keyboard, run in a fresh interpreter per press of A, REPL one
+  Select away — a self-contained Python computer on a 1990 console,
+  whose saves live in the same .srm battery file as any Zelda. The
+  bring-up exposed that the on-screen keyboard's "block cursor" had
+  been a VRAM overlap bug since M5 (the tilemap sat inside the
+  highlight font tiles), that Mesen's testrunner hard-kills Lua scripts
+  at ~100 wall seconds, and that ledger #21 (8-bit compares read 16
+  bits) could silently duplicate files on every re-save.
 - M8 bring-up added **Calypsi bug #23** to the ledger — `aligned(2)` is
   ALSO silently ignored at variable position when the declared type is an
   anonymous struct. Frozen tuples landed at odd addresses, whose tagged

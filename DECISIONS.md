@@ -1,5 +1,48 @@
 # Decisions log
 
+## 2026-07-04 — M9: mpyos, the all-in-one workstation ROM (13/13 green)
+
+`build/mpyos.sfc` boots into a C file manager over **32KB battery SRAM**
+(persists as the emulator's .srm), edits Python files in a C full-screen
+editor typed on the joypad keyboard, runs them (or the frozen Stage demo)
+in a fresh interpreter per run, and drops into the shared REPL on Select.
+Key structure:
+
+- **SRAM**: snes/header_sram.s (separate header variant, cart type $02 /
+  RAM $05, so the six existing ROM images stay byte-identical) +
+  snes/sram_fs.c: 16-dirent table + compacted data area, all access via
+  window-aware helpers (HiROM SRAM = 8KB windows at $30-$33:$6000-$7FFF;
+  far pointers must not cross banks). Mesen's testrunner persists
+  Mesen2/Saves/<rom>.srm — proven by running sramtest twice (a file that
+  spans the window-0/1 boundary survives write, compaction, and reboot).
+- **pyexec extraction**: repl_main.c's engine (dual mailbox/console I/O,
+  compile-and-run, interactive loop incl. raw mode) moved verbatim to
+  port/pyexec.c, shared by mpyrepl and mpyos. mpyrepl behavior unchanged
+  (suite + raw-mode smoke green).
+- **PPU handoff round-trip**: console_enable() (the disable latch was
+  one-way) + snesstage_hw_reset() (drops the stage lazy-init latch);
+  recover() = reset + enable + console_init + pad_wait_release. Proven by
+  running the full Stage demo from the manager and returning to a live
+  list (test_run_frozen_stage_stdin).
+- **Per-run interpreter**: gc_init + mp_init before, mp_deinit after every
+  run; no C-held mp_obj_t across runs (raw-mode precedent).
+
+Bugs found on the way:
+- **sfs_write's int8_t slot test** hit ledger #21 (1-byte values tested
+  with 16-bit reads): `existing >= 0` misread slot 1 as negative, the
+  replace-delete was skipped, and every re-save DUPLICATED the file. The
+  sram_fs API now uses plain int for find/write results.
+- **Console tilemap overlapped the highlight font tiles** since M5: the
+  font is 0x600 VRAM words but the tilemap sat at word 0x400, so inverse-
+  video tiles 128-191 (every letter) rendered as garbage — the oskb's
+  "block cursor" was actually this bug wearing a costume. Tilemap moved to
+  word 0x800; the file manager's selection bar made it visible.
+- **Mesen testrunner hard-kills Lua at ~100s wall time** regardless of the
+  ScriptTimeout setting: long scripted sessions must either fit (the stage
+  run does) or be split; the joypad-plane test runs hello.py instead of
+  the 3-minute demo. The harness gained run-length JOYSEQ entries
+  ("b*3000") so long holds don't bloat the Lua source.
+
 ## 2026-07-03 (late) — M8: Stage game library on the PPU; two build-system bites
 
 The python-ugame Stage library (Bank/Grid/Sprite tile-game API) ported to

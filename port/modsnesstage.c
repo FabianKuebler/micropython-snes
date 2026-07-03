@@ -211,6 +211,17 @@ static void ensure_init(void)
   INIDISP = 0x0F;
 }
 
+// C-side teardown for the workstation ROM: after a program that used the
+// stage backend returns, the console takes the PPU back (console_enable +
+// console_init) and this drops the lazy-init latch so the NEXT stage use
+// redoes the full mode-1 bring-up against the console-owned PPU.
+void snesstage_hw_reset(void)
+{
+  st_ready = 0;
+  cg_dirty = 0;
+  tm_dirty = 0;
+}
+
 static mp_obj_t snesstage_init(void)
 {
   ensure_init();
