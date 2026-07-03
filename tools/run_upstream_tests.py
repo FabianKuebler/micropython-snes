@@ -32,6 +32,7 @@ EXP_CACHE = ROOT / "build/upstream_exp"
 # emulated frames per batch: generous; a hung test costs one batch timeout
 FRAMES_PER_TEST = 10800  # 3 emulated minutes
 LINE_RE = re.compile(rb", line \d+")
+FILE_RE = re.compile(rb'File "[^"]*"')  # host: test filename, target: <stdin>
 
 
 def reference_output(test: Path) -> bytes | None:
@@ -57,6 +58,7 @@ def reference_output(test: Path) -> bytes | None:
 def normalize(b: bytes) -> bytes:
     b = b.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     b = LINE_RE.sub(b"", b)  # host tracebacks carry line numbers, target's don't
+    b = FILE_RE.sub(b'File ""', b)  # and the filename (target compiles from <stdin>)
     return b.strip() + b"\n"
 
 

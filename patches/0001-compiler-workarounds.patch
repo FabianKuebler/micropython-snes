@@ -2048,6 +2048,30 @@ index 3b0ae279a..96786c970 100644
  
  bool mp_mul_mp_int_t_overflow(mp_int_t x, mp_int_t y, mp_int_t *res) {
      // Check for multiply overflow; see CERT INT32-C
+diff --git a/py/smallint.c b/py/smallint.c
+index eb99b5866..35853644c 100644
+--- a/py/smallint.c
++++ b/py/smallint.c
+@@ -27,10 +27,17 @@
+ #include "py/smallint.h"
+ 
+ mp_int_t mp_small_int_modulo(mp_int_t dividend, mp_int_t divisor) {
++    // Calypsi: the _Mod32 runtime helper clobbers the _Dp scratch slots the
++    // compiler parked 'divisor' in (it read back |divisor| afterwards, so
++    // 7 % -3 gave 1 and -7 % -3 gave 2). A volatile static survives the
++    // call; volatile *stack* locals would not (Calypsi ignores those, see
++    // DECISIONS.md). Not reentrancy-sensitive: no callbacks from here.
++    static volatile mp_int_t div_save;
++    div_save = divisor;
+     // Python specs require that mod has same sign as second operand
+     dividend %= divisor;
+-    if ((dividend < 0 && divisor > 0) || (dividend > 0 && divisor < 0)) {
+-        dividend += divisor;
++    if ((dividend < 0 && div_save > 0) || (dividend > 0 && div_save < 0)) {
++        dividend += div_save;
+     }
+     return dividend;
+ }
 diff --git a/tools/mpy-tool.py b/tools/mpy-tool.py
 index 67e2cbf15..d57fd5afa 100755
 --- a/tools/mpy-tool.py

@@ -1,5 +1,54 @@
 # Decisions log
 
+## 2026-07-03 (evening) — the SNES passes 87% of upstream tests/basics
+
+Built the official-suite harness and ran all 571 files of
+micropython/tests/basics on the target. **Final: 414 pass, 62 fail/hang,
+95 skip (reference can't run them) = 87.0% of runnable tests pass on the
+SNES.** Machinery (tools/run_upstream_tests.py): REPL ROM raw mode
+(^A source ^D, output bracketed STX/EOT, mp_deinit/mp_init between tests),
+expected outputs from a unix reference build (VARIANT_DIR=
+tools/host_variant) mirroring the port config (CORE, float32, no bignum);
+batches of 10 through the mailbox; a hung test costs its batch and is
+skipped on the rerun. Results: build/upstream_final.json.
+
+The suite immediately found three bugs our own 7 suites never could:
+
+1. **emitbc.c jump offsets (UPSTREAM BUG, 16-bit size_t):**
+   `label_offsets[label] - bytecode_offset - 2` subtracts in unsigned
+   16-bit size_t and then widens to 32-bit ssize_t — no sign bit to wrap
+   into, so a backward jump of -20 arrived as +65516 and EVERY loop
+   compiled on target raised "bytecode overflow" (the parked REPL
+   mystery). Fix: widen operands to ssize_t before subtracting.
+
+2. **Calypsi stack-slot mismatch (new codegen class):** parse.c's constant
+   fold computed `op = POSITIVE + (tok - PLUS)`, stored it to stack slot
+   1,s and passed slot 3,s to mp_unary_op — every folded negative literal
+   became ~x instead of -x (print(-1) -> -2; abs(-1) == 2). Invisible in
+   frozen code (mpy-cross folds on the host). Dodge: explicit branches
+   passing constant op values.
+
+3. **Calypsi _Mod32 clobbers caller _Dp scratch:** the compiler parked
+   'divisor' in _Dp+4..7 across the % helper call; _Mod32 leaves
+   |divisor| there, so the Python sign fix saw a sign-stripped divisor
+   (7 % -3 == 1, -7 % -3 == 2). Floor division was unaffected (adjusts
+   before dividing). Fix: volatile STATIC copy of the divisor (volatile
+   stack locals are ignored by Calypsi — bug 2's asymmetry, exploited
+   deliberately this time).
+
+Remaining 62: ~6 int-width (host 64-bit folds literals the target can't,
+no bignum), 5 sizeof(int)==2 (array/bytes item sizes), 3 hangs
+(set_comprehension, string_format_modulo, syntaxerror), ~48 unclassified
+(mix of string-format feature gaps, heap limits, scope features — next
+session's triage list; many will be legit platform categories).
+
+Also this round: objarray.h dual layout (Calypsi variant keeps len/items
+at mp_obj_str_t offsets — the misc.h aliasing assert caught my earlier
+pad-byte layout violating it; upstream bitfields restored for other
+compilers), memview_offset_max made conditional, and the host reference
+variant lives in tools/host_variant/.
+
+
 ## 2026-07-03 — M7 GREEN: nano-gui on the SNES (7/7). THE GC marker bug.
 
 pytest 7/7. The demo renders pixel-faithfully: Meter, red LED, cyan Dial
