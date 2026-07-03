@@ -25,9 +25,15 @@ class SSD(framebuf.FrameBuffer):
         self.mode = framebuf.GS4_HMSB
         self.palette = BoolPalette(self.mode)
         super().__init__(self.buffer, self.width, self.height, self.mode)
-        snesfb.init()
+        self._hw = False
 
     def show(self):
+        # PPU takeover deferred to the first real frame: imports take a
+        # minute of real time on the 65816 and the boot console shows
+        # progress until then (snesfb.init() disables it).
+        if not self._hw:
+            snesfb.init()
+            self._hw = True
         lut = SSD.lut
         for i in range(16):
             snesfb.palette(i, lut[2 * i] | (lut[2 * i + 1] << 8))

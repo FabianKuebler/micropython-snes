@@ -15,6 +15,8 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 
+#include "../snes/console.h"
+
 #define REG8(a) (*(volatile __far uint8_t *)(a))
 #define INIDISP REG8(0x002100)
 #define BGMODE REG8(0x002105)
@@ -90,6 +92,7 @@ static void vram_dma(uint16_t vram_word_addr, const void *src, uint16_t bytes)
 static mp_obj_t snesfb_init(void)
 {
   uint16_t i;
+  console_disable(); // our VRAM layout overlaps the boot console's
   INIDISP = 0x8F; // force blank for the big VRAM setup
   BGMODE = 0x01;  // mode 1: BG1 4bpp
   BG1SC = (VRAM_TILEMAP >> 10) << 2;

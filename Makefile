@@ -97,7 +97,8 @@ $(MPBUILD)/extmod/%.o: $(MPTOP)/extmod/%.c $(PORT)/mpconfigport.h | $(GENERATED)
 	@mkdir -p $(MPBUILD)/extmod
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-PORT_OBJS := $(MPBUILD)/main.o $(MPBUILD)/modsnesfb.o $(SNES_OBJS)
+CONSOLE_OBJS := $(BUILD)/console.o $(BUILD)/oskb.o $(MPBUILD)/font_tiles.o
+PORT_OBJS := $(MPBUILD)/main.o $(MPBUILD)/modsnesfb.o $(SNES_OBJS) $(CONSOLE_OBJS)
 
 # VM_SPLIT=1 replaces py/vm.c (one 21KB function both compilers miscompile
 # layout-sensitively, DECISIONS.md) with port/vm_split.c (one tiny function
@@ -282,10 +283,8 @@ $(MPBUILD)/font_tiles.o: $(MPBUILD)/font_tiles.c
 
 $(BUILD)/console.o $(BUILD)/oskb.o: snes/console.h
 
-CONSOLE_OBJS := $(BUILD)/console.o $(BUILD)/oskb.o $(MPBUILD)/font_tiles.o
 
-REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o \
-             $(CONSOLE_OBJS)
+REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
 
 # The REPL ROM freezes the nano-gui package tree (frozen_content_gui), so
 # the GUI can be driven interactively; its frozen main.py is never executed.

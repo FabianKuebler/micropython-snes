@@ -15,6 +15,7 @@
 #include "py/objmodule.h"
 #include "py/runtime.h"
 
+#include "../snes/console.h"
 #include "../snes/mailbox.h"
 
 // GC heap: WRAM bank $7F below the mailbox (one bank only — far pointer
@@ -52,6 +53,14 @@ int main(void)
   mb_init();
   mp_cstack_init_with_top(&stack_dummy, STACK_SIZE);
   gc_init((void *)HEAP_START, (void *)HEAP_END);
+  // Boot console: interpreter startup plus frozen imports take ~1-2 minutes
+  // of real time on a 3.58 MHz 65816, so show progress on the TV instead of
+  // a black screen. snesfb.init() calls console_disable() when it takes
+  // over the PPU (the VRAM layouts overlap).
+  console_init();
+  console_puts("MicroPython on SNES\nbooting (this takes a minute"
+               "\non real hardware)...\n");
+  console_flush();
   mp_init();
   run_frozen();
   mp_deinit();
@@ -101,7 +110,12 @@ mp_uint_t mp_hal_stdout_tx_strn(const char *str, size_t len)
 {
   mp_uint_t n = len;
   while (len--) {
-    mb_putc(*str++);
+    char c = *str++;
+    mb_putc(c);
+    console_putc(c); // no-op once snesfb owns the PPU
+    if (c == '\n') {
+      console_flush();
+    }
   }
   return n;
 }

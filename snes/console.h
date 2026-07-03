@@ -18,6 +18,7 @@
 #define CON_TILE_HL(c) ((uint16_t)((c) - 0x20 + 96))
 
 void console_init(void); // full PPU bring-up, cleared screen, display on
+void console_disable(void); // make putc/flush no-ops (PPU handed to snesfb)
 void console_putc(char c); // terminal write: \n scrolls, \b rubs out
 void console_puts(const char *s);
 void console_set_cell(uint8_t x, uint8_t y, uint16_t tile); // static area

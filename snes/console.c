@@ -40,6 +40,9 @@
 extern const unsigned char snes_font2bpp[]; // generated, 192 tiles
 
 static uint16_t con_shadow[CON_ROWS * CON_COLS];
+// set by console_disable(): the framebuffer module owns the PPU now and the
+// console's VRAM addresses overlap snesfb's tile data
+static uint8_t con_disabled;
 static uint8_t con_x, con_y;
 
 // split a C far pointer into DMA source bytes without pointer->int casts
@@ -73,8 +76,16 @@ static void wait_vblank(void)
   }
 }
 
+void console_disable(void)
+{
+  con_disabled = 1;
+}
+
 void console_flush(void)
 {
+  if (con_disabled) {
+    return;
+  }
   // overlay a block cursor at the write position for the DMA, then restore
   uint16_t idx = (uint16_t)con_y * CON_COLS + con_x;
   uint16_t saved = con_shadow[idx];
@@ -108,6 +119,9 @@ static void scroll_up(void)
 
 void console_putc(char c)
 {
+  if (con_disabled) {
+    return;
+  }
   if (c == '\r') {
     return;
   }

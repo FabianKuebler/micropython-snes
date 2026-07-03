@@ -3,13 +3,19 @@
 # package tree. Frozen into build/mpygui.sfc; tests assert the mailbox
 # transcript, the screen shows the widgets.
 from color_setup import ssd
-from gui.core.nanogui import refresh
+from gui.core.nanogui import refresh, DObject
 from gui.widgets.label import Label
 from gui.widgets.meter import Meter
 from gui.widgets.led import LED
 from gui.widgets.dial import Dial, Pointer
 
-refresh(ssd, True)
+# Register the device by hand (= refresh()'s first-visit branch minus the
+# show): the first ssd.show() hands the PPU from the boot console to the
+# framebuffer, and widget construction below takes ~1 min of real time on
+# the 65816 — keep the console (and these prints) on screen until the
+# first complete frame.
+DObject.devices[ssd] = set()
+ssd.fill(0)
 print("nanogui: init ok")
 
 from gui.core.writer import CWriter
