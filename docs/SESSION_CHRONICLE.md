@@ -249,18 +249,42 @@ too?) was never run because the theory said function size was the variable.
   `Meter`.
 - Two codegen checkers wired into every link.
 
-## 7. Current state & the open thread
+## 7. Current state (updated through M8, 2026-07-03 late night)
 
-pytest **6/7 green**: hello, selftest, M3 frozen Python, M4 (recursion/
-classes/generators/closures — layout-perturbation-proof), M5 REPL session,
-M6 joypad session. Red: `test_gui` — the nano-gui demo renders Label and
-Meter, then dies in `LED.__init__` where the zero-arg `super()` method
-lookup resolves to something with the wrong arity ("function takes 1
-positional arguments but 9 were given") — *only* in the frozen-main context;
-the identical code passes interactively. It is the next roulette site;
-the hunt was in progress when this document was requested. Entry point:
-`import main` in the REPL ROM reproduces; instrument
-`mp_load_super_method` / `mp_obj_class_lookup`; `.lst` microscope.
+pytest **8/8 green**: hello, selftest, M3 frozen Python, M4 (recursion/
+classes/generators/closures), M5 REPL session, M6 joypad session, M7
+nano-gui, M8 Stage. The `super()` failure that ends section 7's earlier
+draft was root-caused as **the GC marker bug** (ledger #16): the collector
+scanned heap children at 4-byte strides only, so pointers at 2-mod-4
+offsets were invisible and live objects were collected — the same bug
+later explained a scrambled palette (bytearray items pointer at offset 9).
+
+Since then, the same day:
+- **The upstream suite ran on the console**: 571 tests from
+  micropython/tests/basics, fed through the REPL's raw mode in Mesen —
+  **430 pass = 91.9% of the 468 the reference can run**. The triage arc
+  (76→83→87→91.9%) burned one new compiler bug per step, including the
+  showstopper `!(k>=k) || f(x)` fold that had silently turned every set
+  literal into a dict.
+- **M8: the Stage game library** (python-ugame, the CircuitPython-era
+  tile/sprite engine) runs with its Python API intact — but its entire
+  per-pixel C compositor deleted, because Bank/Grid/Sprite map 1:1 onto
+  what the PPU does in silicon (VRAM charsets, the BG1 tilemap, OAM).
+  A Stage bank is 2048 bytes; an SNES 4bpp charset of 64 8x8 tiles is
+  2048 bytes; one VRAM upload serves both backgrounds and sprites.
+  Six bouncing sprites over a brick arena: **0.84 fps of pure Python
+  game logic** (a nano-gui frame was ~10s), boot-to-first-frame 20s
+  (was 117s), per-frame cost now scales with sprite count, not pixels.
+  Screenshot: `stage_snes.png`; measurement: `tools/measure_stage.py`
+  (frame-stamped mailbox log under Mesen).
+- M8 bring-up added **Calypsi bug #23** to the ledger — `aligned(2)` is
+  ALSO silently ignored at variable position when the declared type is an
+  anonymous struct. Frozen tuples landed at odd addresses, whose tagged
+  pointers decode as small ints under REPR_B: the demo's ball table
+  failed as "'int' object isn't iterable", "'bool' object isn't
+  iterable", or "too many values to unpack" depending on which build you
+  ran. Alignment remains the project's one recurring villain: it was the
+  months-long M4 mystery, and it came back wearing a typedef.
 
 ## 8. Details and color for the article
 

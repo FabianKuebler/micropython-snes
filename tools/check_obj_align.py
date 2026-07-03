@@ -6,7 +6,15 @@ target sits at an odd address is indistinguishable from a small int. Calypsi
 ignores aligned() on struct members/types (it only honors it on variable
 definitions, Calypsi guide 11.7), so every ROM/static object definition must
 carry the attribute at variable position -- this script is the safety net
-that proves none was missed. Usage: check_obj_align.py build/mpy.map
+that proves none was missed.
+
+The map only names EXPORTED symbols; file-static objects (mpy-tool's frozen
+const_obj_*) are invisible there, so .lst files can be passed after the map:
+every const object label in them must be preceded by an `.align 2` directive
+(Calypsi also ignores aligned() at variable position when the declared type
+is an ANONYMOUS struct -- found the hard way when frozen tuples landed odd).
+
+Usage: check_obj_align.py build/mpy.map [frozen_content*.lst ...]
 """
 import re
 import sys
@@ -24,6 +32,29 @@ EXCLUDE_RE = re.compile(r"^_StringLiteral_")
 
 SYM_RE = re.compile(r"^(\S+) in section '(\w+)'$")
 PLACED_RE = re.compile(r"^\s*placed at address ([0-9a-fA-F]+)-")
+
+# .lst labels that are mp_obj_t targets and must be 2-aligned
+LST_OBJ_RE = re.compile(r"^\s*\\ [0-9a-f]+\s+(const_obj_\S+):")
+LST_ALIGN_RE = re.compile(r"^\s*\\ [0-9a-f]+\s+\.align\s+2")
+
+
+def check_lst(path):
+    """Return labels of const objects not preceded by .align 2."""
+    bad = []
+    prev_align = False
+    for line in open(path):
+        if LST_ALIGN_RE.match(line):
+            prev_align = True
+            continue
+        m = LST_OBJ_RE.match(line)
+        if m:
+            if not prev_align:
+                bad.append(m.group(1))
+            prev_align = False
+        elif line.strip().startswith("\\"):
+            prev_align = False
+    return bad
+
 
 def main(path):
     bad = []
@@ -55,4 +86,15 @@ def main(path):
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]))
+    rc = main(sys.argv[1])
+    for lst in sys.argv[2:]:
+        bad = check_lst(lst)
+        if bad:
+            print(f"check_obj_align: {len(bad)} const object(s) in {lst} "
+                  f"WITHOUT .align 2 (anonymous-struct aligned() drop?):")
+            for name in bad:
+                print(f"  {name}")
+            rc = 1
+        else:
+            print(f"check_obj_align: {lst}: all const objects .align 2")
+    sys.exit(rc)

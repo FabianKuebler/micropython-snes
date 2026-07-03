@@ -93,12 +93,14 @@ PY_OBJS := $(addprefix $(MPBUILD)/py/,$(PY_SRC_NAMES:.c=.o))
 EXTMOD_SRC_NAMES := modframebuf.c
 PY_OBJS += $(addprefix $(MPBUILD)/extmod/,$(EXTMOD_SRC_NAMES:.c=.o))
 
-$(MPBUILD)/extmod/%.o: $(MPTOP)/extmod/%.c $(PORT)/mpconfigport.h | $(GENERATED)
-	@mkdir -p $(MPBUILD)/extmod
-	$(CC) -o $@ $< $(MPCFLAGS)
+# (the extmod compile rule lives below, after GENERATED is defined: make
+# expands prerequisite lists at rule-read time, so referencing $(GENERATED)
+# here would silently expand to nothing — which once left a stale
+# modframebuf.o whose framebuf locals dict answered to math/set qstr ids)
 
 CONSOLE_OBJS := $(BUILD)/console.o $(BUILD)/oskb.o $(MPBUILD)/font_tiles.o
-PORT_OBJS := $(MPBUILD)/main.o $(MPBUILD)/modsnesfb.o $(SNES_OBJS) $(CONSOLE_OBJS)
+PORT_OBJS := $(MPBUILD)/main.o $(MPBUILD)/modsnesfb.o $(MPBUILD)/modsnesstage.o \
+             $(SNES_OBJS) $(CONSOLE_OBJS)
 
 # VM_SPLIT=1 replaces py/vm.c (one 21KB function both compilers miscompile
 # layout-sensitively, DECISIONS.md) with port/vm_split.c (one tiny function
@@ -115,7 +117,8 @@ $(VMSTAMP): | $(GENHDR)
 	touch $@
 SRC_QSTR := $(addprefix $(MPTOP)/py/,$(filter-out nlr%,$(PY_SRC_NAMES))) \
             $(addprefix $(MPTOP)/extmod/,$(EXTMOD_SRC_NAMES)) \
-            $(PORT)/main.c $(PORT)/repl_main.c $(PORT)/modsnesfb.c
+            $(PORT)/main.c $(PORT)/repl_main.c $(PORT)/modsnesfb.c \
+            $(PORT)/modsnesstage.c
 
 .PHONY: mpy patch-micropython
 mpy: $(BUILD)/mpy.sfc
@@ -151,18 +154,26 @@ $(GENHDR)/root_pointers.collected: $(GENHDR)/qstr.i.last
 	$(PYTHON) $(MPTOP)/py/makeqstrdefs.py split root_pointer $< $(GENHDR)/root_pointer _
 	$(PYTHON) $(MPTOP)/py/makeqstrdefs.py cat root_pointer _ $(GENHDR)/root_pointer $@
 
+# The generated headers are REAL prerequisites of every object file (a new
+# qstr renumbers the whole table: objects compiled against the old header
+# would disagree with the frozen content about what any qstr id means — the
+# demo import of '_snesstage' once resolved to its table neighbor 'acos').
+# The cmp guard keeps an unchanged table from rebuilding the world.
 $(GENHDR)/qstrdefs.generated.h: $(GENHDR)/qstrdefs.collected.h $(PORT)/qstrdefsport.h
 	cat $(MPTOP)/py/qstrdefs.h $(PORT)/qstrdefsport.h $(GENHDR)/qstrdefs.collected.h \
 	  | sed 's/^Q(.*)/"&"/' \
 	  | $(QCPP) $(MP_INC) -DNO_QSTR -DMICROPY_PREVIEW_VERSION_2=0 - \
 	  | sed 's/^\"\(Q(.*)\)\"/\1/' > $(GENHDR)/qstrdefs.preprocessed.h
-	$(PYTHON) $(MPTOP)/py/makeqstrdata.py $(GENHDR)/qstrdefs.preprocessed.h > $@
+	$(PYTHON) $(MPTOP)/py/makeqstrdata.py $(GENHDR)/qstrdefs.preprocessed.h > $@.tmp
+	@if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
 $(GENHDR)/moduledefs.h: $(GENHDR)/moduledefs.collected
-	$(PYTHON) $(MPTOP)/py/makemoduledefs.py $< > $@
+	$(PYTHON) $(MPTOP)/py/makemoduledefs.py $< > $@.tmp
+	@if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
 $(GENHDR)/root_pointers.h: $(GENHDR)/root_pointers.collected
-	$(PYTHON) $(MPTOP)/py/make_root_pointers.py $< > $@
+	$(PYTHON) $(MPTOP)/py/make_root_pointers.py $< > $@.tmp
+	@if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
 GENERATED := $(GENHDR)/mpversion.h $(GENHDR)/qstrdefs.generated.h \
              $(GENHDR)/moduledefs.h $(GENHDR)/root_pointers.h
@@ -171,16 +182,23 @@ GENERATED := $(GENHDR)/mpversion.h $(GENHDR)/qstrdefs.generated.h \
 # strategy; if-else compare chains work (Calypsi bug, DECISIONS.md)
 $(MPBUILD)/py/vm.o: MPCFLAGS += --force-switch if-else
 
-$(MPBUILD)/py/%.o: $(MPTOP)/py/%.c $(PORT)/mpconfigport.h | $(GENERATED)
+$(MPBUILD)/py/%.o: $(MPTOP)/py/%.c $(PORT)/mpconfigport.h $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-$(MPBUILD)/main.o: $(PORT)/main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
+$(MPBUILD)/extmod/%.o: $(MPTOP)/extmod/%.c $(PORT)/mpconfigport.h $(GENERATED)
+	@mkdir -p $(MPBUILD)/extmod
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-$(MPBUILD)/vm_split.o: $(PORT)/vm_split.c $(PORT)/mpconfigport.h | $(GENERATED)
+$(MPBUILD)/main.o: $(PORT)/main.c $(PORT)/mpconfigport.h snes/mailbox.h $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
-$(MPBUILD)/modsnesfb.o: $(PORT)/modsnesfb.c $(PORT)/mpconfigport.h | $(GENERATED)
+$(MPBUILD)/vm_split.o: $(PORT)/vm_split.c $(PORT)/mpconfigport.h $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(MPBUILD)/modsnesfb.o: $(PORT)/modsnesfb.c $(PORT)/mpconfigport.h $(GENERATED)
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+$(MPBUILD)/modsnesstage.o: $(PORT)/modsnesstage.c $(PORT)/mpconfigport.h $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
 # ---- frozen bytecode: host mpy-cross + mpy-tool ------------------------------
@@ -202,7 +220,7 @@ $(MPBUILD)/frozen_content.o: $(MPBUILD)/frozen_content.c
 
 $(BUILD)/mpy.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy.map $(filter-out $(VMSTAMP),$^)
-	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy.map
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy.map $(MPBUILD)/frozen_content.lst
 	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M4: the decisive constructs (recursion, methods, classes, generators) --
@@ -223,7 +241,7 @@ $(MPBUILD)/frozen_content_m4.o: $(MPBUILD)/frozen_content_m4.c
 
 $(BUILD)/mpy4.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_m4.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpy4.map $(filter-out $(VMSTAMP),$^)
-	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpy4.map $(MPBUILD)/frozen_content_m4.lst
 	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M7: nano-gui (peterhinch/micropython-nano-gui, frozen package tree) ----
@@ -261,7 +279,42 @@ mpygui: $(BUILD)/mpygui.sfc
 
 $(BUILD)/mpygui.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpygui.map $(filter-out $(VMSTAMP),$^)
-	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpygui.map
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpygui.map $(MPBUILD)/frozen_content_gui.lst
+	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
+
+# ---- M8: Stage game library (python-ugame/micropython-stage on the PPU) -----
+# stage.py drives banks/grids/sprites through the _snesstage C module; the
+# generated demo assets and port/main_stage.py are frozen alongside.
+
+STAGE_PYLIB := stage.py stage_assets.py
+
+$(PORT)/pylib/stage_assets.py: tools/gen_stage_assets.py
+	$(PYTHON) tools/gen_stage_assets.py
+
+STAGE_MPY := $(MPBUILD)/stage_mpy/main.mpy \
+             $(addprefix $(MPBUILD)/stage_mpy/,$(STAGE_PYLIB:.py=.mpy))
+
+$(MPBUILD)/stage_mpy/main.mpy: $(PORT)/main_stage.py $(MPY_CROSS) | $(GENHDR)
+	@mkdir -p $(dir $@)
+	$(MPY_CROSS) -o $@ -s main.py $<
+
+$(MPBUILD)/stage_mpy/%.mpy: $(PORT)/pylib/%.py $(MPY_CROSS) | $(GENHDR)
+	@mkdir -p $(dir $@)
+	$(MPY_CROSS) -o $@ -s $*.py $<
+
+$(MPBUILD)/frozen_content_stage.c: $(STAGE_MPY) $(GENHDR)/qstrdefs.generated.h
+	$(PYTHON) $(MPTOP)/tools/mpy-tool.py -f -q $(GENHDR)/qstrdefs.preprocessed.h \
+	  -mlongint-impl=none $(STAGE_MPY) > $@
+
+$(MPBUILD)/frozen_content_stage.o: $(MPBUILD)/frozen_content_stage.c
+	$(CC) -o $@ $< $(MPCFLAGS)
+
+.PHONY: mpystage
+mpystage: $(BUILD)/mpystage.sfc
+
+$(BUILD)/mpystage.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_stage.o $(VMSTAMP)
+	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpystage.map $(filter-out $(VMSTAMP),$^)
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpystage.map $(MPBUILD)/frozen_content_stage.lst
 	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 # ---- M5: interactive REPL (compiler runs on the 65816) ----------------------
@@ -271,7 +324,7 @@ $(BUILD)/mpygui.raw: $(PY_OBJS) $(PORT_OBJS) $(MPBUILD)/frozen_content_gui.o $(V
 .PHONY: mpyrepl
 mpyrepl: $(BUILD)/mpyrepl.sfc
 
-$(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/mpconfigport.h snes/mailbox.h | $(GENERATED)
+$(MPBUILD)/repl_main.o: $(PORT)/repl_main.c $(PORT)/mpconfigport.h snes/mailbox.h $(GENERATED)
 	$(CC) -o $@ $< $(MPCFLAGS)
 
 # PPU text console + on-screen keyboard (REPL ROM only)
@@ -290,7 +343,7 @@ REPL_OBJS := $(filter-out $(MPBUILD)/main.o,$(PORT_OBJS)) $(MPBUILD)/repl_main.o
 # the GUI can be driven interactively; its frozen main.py is never executed.
 $(BUILD)/mpyrepl.raw: $(PY_OBJS) $(REPL_OBJS) $(MPBUILD)/frozen_content_gui.o $(VMSTAMP)
 	$(LN) -o $@ $(LNFLAGS) --list-file=$(BUILD)/mpyrepl.map $(filter-out $(VMSTAMP),$^)
-	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyrepl.map
+	$(PYTHON) tools/check_obj_align.py $(BUILD)/mpyrepl.map $(MPBUILD)/frozen_content_gui.lst
 	@$(PYTHON) tools/check_neg_index.py $(MPBUILD)/*.lst $(MPBUILD)/py/*.lst $(MPBUILD)/extmod/*.lst
 
 clean:

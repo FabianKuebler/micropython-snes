@@ -1,6 +1,57 @@
 # Decisions log
 
-## 2026-07-03 (night) — 91.9% of upstream tests/basics; the `!(k>=k) ||` bug
+## 2026-07-03 (late) — M8: Stage game library on the PPU; two build-system bites
+
+The python-ugame Stage library (Bank/Grid/Sprite tile-game API) ported to
+hardware: port/pylib/stage.py keeps the upstream API, but the whole
+per-pixel `_stage` C compositor is replaced by port/modsnesstage.c driving
+the PPU — Bank = 4bpp VRAM charset (a Stage bank is 2048 bytes, exactly 64
+SNES 8x8 chars; ONE upload serves BG and OBJ, since both read the same
+32-byte tile format and 16x16 composition and OBSEL/BG12NBA can share char
+base 0), Grid = BG1 tilemap in 16x16-tile mode (Grid.move = scroll
+registers), Sprite = an OAM entry (Stage rotations 0/2/4/6 = H/V flip
+bits; the 90-degree ones raise). All PPU state lives in WRAM shadows that
+flip() DMAs in one vblank (CGRAM 512 + tilemap 2048 + OAM 544 bytes ≈
+3.1KB, inside the ~6KB budget). No heap objects in the C module at all —
+buffers are read per-call, so no GC/layout interactions by construction.
+
+Bring-up cost three root-caused bugs — two ours, one new Calypsi entry:
+
+**MP_TUPLE_ITEMS_BOUND(4) vs frozen tuples (ours).** The earlier tuple-FAM
+fix (Calypsi emits NOTHING for FAM-initialized arrays) bounded items[] at
+4 — enough for modsys, but the demo froze 5/6-element tuples and Calypsi
+DROPS excess initializer elements (with only a warning). Fix: mpy-tool.py
+emits each frozen tuple with an exact-size items array (layout-compatible;
+allocation is offsetof-based). Patch regenerated.
+
+**Order-only $(GENERATED) = stale qstr ids (ours).** Adding the first new
+qstrs since the objects were built exposed that every %.o rule had
+`| $(GENERATED)` (order-only): the frozen content was compiled against the
+NEW qstr numbering, the core against the OLD — off by one slot, so
+`import _snesstage` reported "no module named 'acos'" (its table
+neighbor). Fix: generated headers are real prerequisites, with a cmp-guard
+so an unchanged table doesn't rebuild the world. Second act of the same
+bug: the extmod %.o rule sat ABOVE the `GENERATED :=` definition, and make
+expands prerequisite lists at rule-read time — its $(GENERATED) had always
+been empty. The stale modframebuf.o answered framebuf method lookups with
+math/set/_snesstage qstrs (`dir(FrameBuffer)` listed 'fabs', 'issubset',
+'bank'; ssd.fill -> AttributeError). Rule moved below the definition.
+
+**Calypsi bug 23: aligned() ignored on ANONYMOUS struct types, even at
+variable position.** The exact-size tuple structs above were first emitted
+as `static const struct {...} MICROPY_OBJ_BASE_ALIGNMENT name = ...` — the
+attribute position that works for every named type produces NO `.align 2`
+when the type is an anonymous struct, so frozen tuples landed at whatever
+parity section packing gave them. An odd-placed object's MP_ROM_PTR has
+bit 0 set = a small int under OBJ_REPR_B: the demo's ball table iterated
+as "'int'/'bool' object isn't iterable" or unpacked the wrong tuple,
+morphing with every layout change (2- and 3-row tables happened to land
+even, 4+ odd). Diagnosed by diffing .lst files: mp_obj_str_t consts get
+`.align 2`, the anonymous structs don't. Fix: mpy-tool emits a typedef per
+tuple arity (named type -> attribute honored). Fence: check_obj_align.py
+now also scans frozen_content*.lst and fails the link if any const_obj_*
+label is not preceded by `.align 2` — the map-based check can never see
+these (file statics aren't in the map).
 
 Triage of the suite residue took the pass rate from 87% to **91.9%
 (430/468 runnable; 571 total, 103 reference-skips)**. pytest 7/7 throughout.
