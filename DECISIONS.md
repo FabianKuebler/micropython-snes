@@ -1,5 +1,43 @@
 # Decisions log
 
+## 2026-07-03 (night) — 91.9% of upstream tests/basics; the `!(k>=k) ||` bug
+
+Triage of the suite residue took the pass rate from 87% to **91.9%
+(430/468 runnable; 571 total, 103 reference-skips)**. pytest 7/7 throughout.
+Fixed this round:
+
+**Calypsi frontend bug, 4-line reproducer:** `if (!((10) >= (10)) || f(x))`
+compiles to unconditional TRUE — f never called, else branch deleted from
+the TU. Plain `0 || f(x)` is fine; the trigger is a NEGATED FOLDED
+RELATIONAL OR'd with anything. MicroPython's feature-test idiom
+`!MICROPY_PY_BUILTINS_SET || cond` (SET = `ROM_LEVEL >= CORE`) expands to
+exactly this shape, so: set literals compiled as dicts, set comprehensions
+emitted as dict comprehensions (emitbc.c), and STORE_COMP dict-stored into
+sets (vm_split.c — the set_comprehension hang). Fixed at 4 sites with
+#if/#else. NOTE for the ledger: py/vm.c:893 has the same idiom (unused —
+we build vm_split) — patch if the fallback VM is ever revived.
+
+The hunt itself burned three workaround attempts, each defeated by a
+DIFFERENT bug, all now in the ledger: (a) 1-byte bool locals are tested
+with 16-bit reads (garbage neighbor byte made false truthy); (b) &&-chain
+early-exits can reach the join with the accumulator holding `pn & 3`
+instead of 0 (materialized short-circuit values are unsafe); (c) even a
+volatile-function-pointer call in the condition got folded. The surviving
+form: cross-TU predicate (mp_parse_node_is_struct_kind_helper in parse.c)
++ preprocessor branching for the feature test.
+
+Also: host reference now mirrors MICROPY_PY_IO=0 (io_* tests honestly
+skip instead of failing the comparison).
+
+Remaining 38 (build/upstream_final.json): ~11 legit platform (int width,
+sizeof(int)==2 endian family, 56KB MemoryError), string_format family
+(~5), sys feature gaps (2), and ~20 worth hunting — likely clusters:
+builtin_bin/hex/oct (one int-formatting issue?), iter1/iter2 +
+gen_yield_from_* (iterator protocol edge?), class_bases/bind_self/
+staticclassmethod, int_small (!), string_endswith/startswith,
+string_format_modulo (hang). Next session.
+
+
 ## 2026-07-03 (evening) — the SNES passes 87% of upstream tests/basics
 
 Built the official-suite harness and ran all 571 files of
