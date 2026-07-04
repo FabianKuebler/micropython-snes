@@ -13,7 +13,7 @@ SESSION = b'1+2\nprint("hi" * 3)\ndef sq(x):\n    return x*x\n\nsq(12)\n1//0\n\x
 
 # built line-by-line: bare continuation/exit prompts carry a trailing space
 EXPECTED = "\n".join([
-    "MicroPython on SNES; ^D exits",
+    "MicroPython on SNES",
     ">>> 1+2",
     "3",
     '>>> print("hi" * 3)',

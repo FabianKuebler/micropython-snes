@@ -36,15 +36,25 @@ void pyexec_puts(const char *s)
 // Input arrives from EITHER the mailbox stdin ring (scripted sessions) or
 // the joypad on-screen keyboard. The wait loop is paced to one iteration
 // per frame by console_flush()'s vblank wait.
+
+// origin of the last byte pyexec_getc returned (1 = oskb/joypad). The REPL
+// uses it to ignore joypad ^D (Select) in ROMs where exiting leads nowhere.
+static uint8_t getc_from_pad;
+// set per pyexec_repl() call: honor joypad ^D? (mpyos: yes, back to the
+// file manager; mpyrepl: no, Select would just brick the console)
+static uint8_t repl_pad_eof;
+
 int pyexec_getc(void)
 {
   for (;;) {
     int c = mb_getc_nonblock();
     if (c >= 0) {
+      getc_from_pad = 0;
       return c;
     }
     c = oskb_poll();
     if (c >= 0) {
+      getc_from_pad = 1;
       return c;
     }
     console_flush();
@@ -83,7 +93,10 @@ static int read_input(vstr_t *line)
   for (;;) {
     char c = (char)pyexec_getc();
     if (c == 0x04 && at_line_start && line->len == 0) {
-      return 0;
+      if (repl_pad_eof || !getc_from_pad) {
+        return 0;
+      }
+      continue; // joypad Select in a ROM with nowhere to exit to: ignore
     }
     if (c == 0x01 && at_line_start && line->len == 0) {
       return 2; // raw mode (upstream-test runner): caller collects to ^D
@@ -117,10 +130,15 @@ static int read_input(vstr_t *line)
   }
 }
 
-void pyexec_repl(void)
+void pyexec_repl(int pad_eof)
 {
   vstr_t line;
-  pyexec_puts("MicroPython on SNES; ^D exits\n"); // <= 32 cols: no line wrap
+  repl_pad_eof = (uint8_t)(pad_eof != 0);
+  if (repl_pad_eof) {
+    pyexec_puts("MicroPython on SNES; Sel exits\n"); // <= 32 cols: no wrap
+  } else {
+    pyexec_puts("MicroPython on SNES\n");
+  }
   vstr_init(&line, 64);
   for (;;) {
     vstr_reset(&line);

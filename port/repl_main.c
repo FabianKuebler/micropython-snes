@@ -32,7 +32,7 @@ int main(void)
   console_init();
   oskb_init();
   mp_init();
-  pyexec_repl();
+  pyexec_repl(0); // no joypad exit: on real hardware there is no "after"
   mp_deinit();
   mb_finish(MB_STATUS_PASS);
   return 0;

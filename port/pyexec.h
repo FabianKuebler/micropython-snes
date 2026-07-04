@@ -23,6 +23,9 @@ void pyexec_str(const char *src, size_t len, mp_parse_input_kind_t kind);
 // banner + interactive loop (incl. the raw mode used by the upstream-test
 // runner). RETURNS on ^D at the start of an empty line; the caller decides
 // what happens next (mpyrepl: mb_finish; mpyos: back to the file manager).
-void pyexec_repl(void);
+// pad_eof: honor a joypad ^D (oskb Select) as exit too. Pass 0 when there
+// is nothing to return to (mpyrepl) — Select is then ignored and only a
+// scripted stdin ^D ends the loop; the banner drops the exit hint.
+void pyexec_repl(int pad_eof);
 
 #endif
