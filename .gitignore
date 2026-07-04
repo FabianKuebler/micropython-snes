@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 vbcc-toolchain/
+# vendor manual (ships inside the toolchain package; not redistributable)
+docs/Calypsi65816Guide.pdf
+vbcc_spike/*.bin
+vbcc_spike/*.sfc
+*.srm

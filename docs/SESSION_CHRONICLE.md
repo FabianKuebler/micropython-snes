@@ -275,7 +275,7 @@ Since then, the same day:
   Six bouncing sprites over a brick arena: **0.84 fps of pure Python
   game logic** (a nano-gui frame was ~10s), boot-to-first-frame 20s
   (was 117s), per-frame cost now scales with sprite count, not pixels.
-  Screenshot: `stage_snes.png`; measurement: `tools/measure_stage.py`
+  Screenshot: `docs/img/stage_snes.png`; measurement: `tools/measure_stage.py`
   (frame-stamped mailbox log under Mesen).
 - **M9 (2026-07-04): the workstation ROM.** `mpyos.sfc` boots into a C
   file manager over 32KB battery SRAM: Python files listed next to the

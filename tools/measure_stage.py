@@ -87,7 +87,7 @@ emu.addEventCallback(onFrame, emu.eventType.endFrame)
 
 
 def main():
-    shot = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "stage_snes.png"
+    shot = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "docs" / "img" / "stage_snes.png"
     work = Path(tempfile.mkdtemp(prefix="stagemeasure"))
     log = work / "timed.log"
     lua = work / "measure.lua"

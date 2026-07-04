@@ -185,7 +185,7 @@ variant lives in tools/host_variant/.
 
 pytest 7/7. The demo renders pixel-faithfully: Meter, red LED, cyan Dial
 with red pointer, Labels, CWriter/arial10 — black background, correct
-palette. Screenshot: nanogui_snes.png.
+palette. Screenshot: docs/img/nanogui_snes.png.
 
 **THE systemic find — GC marker misses unaligned interior pointers.**
 gc_mark_subtree scans heap block children at aligned 4-byte strides. With
