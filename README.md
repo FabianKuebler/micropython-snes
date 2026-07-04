@@ -40,8 +40,8 @@ editor menu / leaves the REPL.
 ## Building
 
 ```sh
-git clone --recurse-submodules <this repo>
-cd micropython-sne
+git clone --recurse-submodules https://github.com/FabianKuebler/micropython-snes.git
+cd micropython-snes
 tools/fetch_toolchain.sh     # Calypsi 65816 5.17 (note: personal/hobby-use license)
 make patch-micropython       # apply patches/ to the submodule (idempotent)
 make mpyos mpyrepl mpystage mpygui
