@@ -17,7 +17,9 @@
 // blank because the inset scrolls them (split) onto the screen edges.
 #define CON_TEXT_COLS 31
 #define CON_TEXT_ROWS 27
-#define CON_SCROLL_ROWS 21 // terminal region; below: separator + keyboard
+// terminal region; below: separator (this row), keyboard grid, a blank
+// spacer row, and the button-hint row (see oskb.c)
+#define CON_SCROLL_ROWS 20
 
 // tile index helpers: font tile = ascii - 0x20; +96 = highlighted variant
 #define CON_TILE(c) ((uint16_t)((c) - 0x20))

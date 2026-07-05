@@ -25,6 +25,9 @@
 #define MICROPY_CONFIG_ROM_LEVEL (MICROPY_CONFIG_ROM_LEVEL_CORE_FEATURES)
 // ...but no filesystem: io/open would need a stream backend
 #define MICROPY_PY_IO (0)
+// f-strings are EXTRA-level upstream but cheap (lexer-only) and expected
+// at an interactive prompt
+#define MICROPY_PY_FSTRINGS (1)
 
 // Frozen modules are compiled on the host with mpy-cross, but the compiler
 // also runs ON TARGET for the REPL (build/mpyrepl.sfc) and eval/exec.

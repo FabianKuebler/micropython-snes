@@ -16,8 +16,10 @@
 #include "sram_fs.h"
 
 #define ED_MAX 8192
-#define VIEW_ROWS 21
-#define STATUS_ROW 21
+// viewport fills the terminal region; the status row replaces the oskb's
+// separator row directly below it
+#define VIEW_ROWS CON_SCROLL_ROWS
+#define STATUS_ROW CON_SCROLL_ROWS
 
 static char ed_buf[ED_MAX];
 static uint16_t ed_len;

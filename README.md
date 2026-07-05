@@ -7,6 +7,8 @@ toolchain. Python source is compiled **on the SNES itself**; the port passes
 **91.9 % of MicroPython's own `tests/basics` suite** (430 of 468 runnable
 tests) on emulated hardware.
 
+![REPL typed on the joypad](docs/img/mpyrepl.png)
+
 | | |
 |---|---|
 | ![file manager](docs/img/mpyos_manager.png) | ![editor](docs/img/mpyos_editor.png) |

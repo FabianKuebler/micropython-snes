@@ -3,7 +3,9 @@
 
 #define KB_COLS 13
 #define KB_ROWS 4
-#define KB_TOP (CON_SCROLL_ROWS + 1) // row 21 is the separator line
+// grid rows 21-24; row 25 is a blank spacer so the hint row (26) doesn't
+// sit flush against the glyph grid; row 20 above is the separator line
+#define KB_TOP (CON_SCROLL_ROWS + 1)
 #define KB_LEFT 3
 #define REPEAT_DELAY 14 // frames before D-pad autorepeat kicks in
 #define REPEAT_RATE 4
