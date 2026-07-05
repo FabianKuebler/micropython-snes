@@ -58,8 +58,7 @@ int main(void)
   // a black screen. snesfb.init() calls console_disable() when it takes
   // over the PPU (the VRAM layouts overlap).
   console_init();
-  console_puts("MicroPython on SNES\nbooting (this takes a minute"
-               "\non real hardware)...\n");
+  console_puts("MicroPython on SNES\nbooting (~20 sec)...\n");
   console_flush();
   mp_init();
   run_frozen();
