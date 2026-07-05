@@ -166,7 +166,7 @@ void console_putc(char c)
   }
   console_set_cell(con_x, con_y, CON_TILE(c));
   con_x++;
-  if (con_x >= CON_COLS) {
+  if (con_x >= CON_TEXT_COLS) {
     console_putc('\n');
   }
 }
@@ -192,9 +192,12 @@ void console_init(void)
   BGMODE = 0x00; // mode 0: BG1 2bpp
   BG1SC = (VRAM_TILEMAP >> 10) << 2; // 32x32 tilemap
   BG12NBA = VRAM_CHARBASE >> 12;
-  BG1HOFS = 0;
-  BG1HOFS = 0;
-  BG1VOFS = 0xFF; // -1: show tilemap row 0 on scanline 1
+  // 4px inset on all sides: HOFS -4 shifts text right (blank column 31
+  // wraps split onto both edges, 4px each); VOFS -5 = the usual -1 plus
+  // 4px down (blank rows 27 and 28-31 cover the bottom and top edges)
+  BG1HOFS = 0xFC;
+  BG1HOFS = 0x03;
+  BG1VOFS = 0xFB;
   BG1VOFS = 0x03;
   CGADD = 0;
   CGDATA = (uint8_t)COL_BG; // c0 backdrop / paper
@@ -213,6 +216,14 @@ void console_init(void)
     con_shadow[i] = CON_TILE(' ');
   }
   vram_dma(VRAM_TILEMAP, con_shadow, sizeof(con_shadow));
+  // the inset scrolls tilemap rows 28-31 onto the top edge: clear them
+  // (the shadow DMA covers rows 0-27 only; this VRAM is never rewritten)
+  VMADDL = (uint8_t)(VRAM_TILEMAP + CON_ROWS * CON_COLS);
+  VMADDH = (uint8_t)((VRAM_TILEMAP + CON_ROWS * CON_COLS) >> 8);
+  for (i = 0; i < (32 - CON_ROWS) * CON_COLS; i++) {
+    VMDATAL = (uint8_t)CON_TILE(' ');
+    VMDATAH = 0;
+  }
   NMITIMEN = 0x01; // auto-joypad on, NMI off (we poll)
   INIDISP = 0x0F; // display on, full brightness
 }

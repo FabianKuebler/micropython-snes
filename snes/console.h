@@ -11,6 +11,12 @@
 
 #define CON_COLS 32
 #define CON_ROWS 28
+// The picture is inset 4px on every side via the BG1 scroll registers so
+// text never touches the screen border. The tilemap stride stays 32x28
+// (CON_COLS/CON_ROWS, the DMA shape); the last column and row must stay
+// blank because the inset scrolls them (split) onto the screen edges.
+#define CON_TEXT_COLS 31
+#define CON_TEXT_ROWS 27
 #define CON_SCROLL_ROWS 21 // terminal region; below: separator + keyboard
 
 // tile index helpers: font tile = ascii - 0x20; +96 = highlighted variant

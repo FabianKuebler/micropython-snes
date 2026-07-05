@@ -99,7 +99,7 @@ static void ed_draw(void)
       uint8_t x = 0;
       ui_fill_row(r, ' ', 0);
       while (off < ed_len && ed_buf[off] != '\n') {
-        if (x < CON_COLS) {
+        if (x < CON_TEXT_COLS) {
           console_set_cell(x, r, CON_TILE(ed_buf[off]));
         }
         x++;

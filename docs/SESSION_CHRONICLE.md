@@ -235,8 +235,7 @@ too?) was never run because the theory said function size was the variable.
 - `snes/console.c` + `snes/oskb.c` — mode-0 PPU text console (white on C64
   blue, public-domain font8x8) and a name-entry-style on-screen keyboard;
   joypad-scripted pytest types `1+2`, Start, and asserts the SNES answers
-  `3`. One ROM serves CI (mailbox) and a real TV (would boot from a
-  flashcart).
+  `3`.
 - Floats (Calypsi's single-precision libm), `framebuf`, complex/cmath,
   frozen *package* imports.
 - `port/modsnesfb.c` — 256×192, 16-color framebuffer on SNES video via the

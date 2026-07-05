@@ -411,7 +411,7 @@ Debug tooling worth remembering (tests/ + this entry):
 ## 2026-07-02 — M6 GREEN: REPL on the TV with joypad input
 
 The REPL ROM (`make mpyrepl`) now drives a real screen and takes controller
-input — it would work on actual hardware from a flashcart. pytest 6/6; the
+input. pytest 6/6; the
 new `tests/test_joypad.py` scripts controller 1 to navigate the on-screen
 keyboard, type `1+2`, run it (SNES prints 3) and exit via Select.
 

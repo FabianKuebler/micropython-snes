@@ -103,7 +103,7 @@ uint8_t ui_event(void)
 
 void ui_text(uint8_t x, uint8_t y, const char *s, uint8_t hl)
 {
-  while (*s && x < CON_COLS) {
+  while (*s && x < CON_TEXT_COLS) {
     if (hl) {
       console_set_cell(x, y, CON_TILE_HL(*s));
     } else {
@@ -117,7 +117,7 @@ void ui_text(uint8_t x, uint8_t y, const char *s, uint8_t hl)
 void ui_fill_row(uint8_t y, char c, uint8_t hl)
 {
   uint8_t x;
-  for (x = 0; x < CON_COLS; x++) {
+  for (x = 0; x < CON_TEXT_COLS; x++) {
     if (hl) {
       console_set_cell(x, y, CON_TILE_HL(c));
     } else {
@@ -205,8 +205,8 @@ static void draw_list(void)
     ui_fill_row(r, ' ', 0);
   }
   ui_text(0, 0, "MPY WORKSTATION", 0);
-  ui_put_u16(20, 0, sfs_free_bytes(), 0);
-  ui_text(26, 0, "b free", 0);
+  ui_put_u16(19, 0, sfs_free_bytes(), 0);
+  ui_text(25, 0, "b free", 0);
   for (r = 0; r < LIST_ROWS; r++) {
     i = (uint8_t)(top + r);
     if (i >= fm_n) {
@@ -227,7 +227,7 @@ static void draw_list(void)
     }
   }
   ui_text(0, 20, "--------------------------------", 0);
-  ui_text(0, 27, "A:menu Y:new Sel:REPL St:quit", 0);
+  ui_text(0, CON_TEXT_ROWS - 1, "A:menu Y:new Sel:REPL St:quit", 0);
   // the flush-time block cursor doubles as the selection pointer
   // (otherwise it sits at (0,0) and covers the title's first letter)
   console_set_cursor(0, (uint8_t)(LIST_TOP + (fm_sel - top)));

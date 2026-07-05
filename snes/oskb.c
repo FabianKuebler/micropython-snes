@@ -44,11 +44,11 @@ static void draw_grid(void)
 void oskb_init(void)
 {
   uint8_t x;
-  const char *hints = "A:type B:del X:spc Y:page St:run";
-  for (x = 0; x < CON_COLS; x++) {
+  const char *hints = "A:type B:del X:spc Y:pg St:run";
+  for (x = 0; x < CON_TEXT_COLS; x++) {
     console_set_cell(x, CON_SCROLL_ROWS, CON_TILE('-'));
     if (hints[x]) {
-      console_set_cell(x, CON_ROWS - 1, CON_TILE(hints[x]));
+      console_set_cell(x, CON_TEXT_ROWS - 1, CON_TILE(hints[x]));
     }
   }
   kb_page = 0;
