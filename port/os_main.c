@@ -153,7 +153,7 @@ int main(void)
         py_begin();
         console_init(); // clear the manager screen for the terminal
         oskb_init();
-        pyexec_repl(1); // Select exits back to the file manager
+        pyexec_repl(1, 0); // Select exits back to the file manager; no boot demo
         py_end();
         recover();
         break;

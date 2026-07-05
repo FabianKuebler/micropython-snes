@@ -32,7 +32,10 @@ int main(void)
   console_init();
   oskb_init();
   mp_init();
-  pyexec_repl(0); // no joypad exit: on real hardware there is no "after"
+  // No joypad exit (there is no "after" on a console). The preload leaves
+  // a demo block pending at the continuation prompt: Start runs it.
+  // NB: each echoed line must fit CON_TEXT_COLS (31) or the console wraps.
+  pyexec_repl(0, "for i in range(3):\n  print(f\"hello SNES {i}\")\n");
   mp_deinit();
   mb_finish(MB_STATUS_PASS);
   return 0;

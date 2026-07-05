@@ -43,9 +43,20 @@ static uint8_t getc_from_pad;
 // set per pyexec_repl() call: honor joypad ^D? (mpyos: yes, back to the
 // file manager; mpyrepl: no, Select would just brick the console)
 static uint8_t repl_pad_eof;
+// boot demo: bytes drained ahead of stdin/oskb as if typed (see pyexec_repl)
+static const char *preload_p;
 
 int pyexec_getc(void)
 {
+  if (preload_p != 0) {
+    char pc = *preload_p;
+    if (pc != '\0') {
+      preload_p++;
+      getc_from_pad = 0;
+      return (uint8_t)pc;
+    }
+    preload_p = 0;
+  }
   for (;;) {
     int c = mb_getc_nonblock();
     if (c >= 0) {
@@ -130,10 +141,19 @@ static int read_input(vstr_t *line)
   }
 }
 
-void pyexec_repl(int pad_eof)
+void pyexec_repl(int pad_eof, const char *preload)
 {
   vstr_t line;
   repl_pad_eof = (uint8_t)(pad_eof != 0);
+  // Preload a demo only for a human: scripted sessions have stdin bytes
+  // queued long before the REPL's first read (the harness feeds the ring
+  // from boot), so a non-empty ring means the transcript must stay clean.
+  preload_p = 0;
+  if (preload != 0) {
+    if (MB_IN_WINDEX == MB_IN_RINDEX) {
+      preload_p = preload;
+    }
+  }
   if (repl_pad_eof) {
     pyexec_puts("MicroPython on SNES; Sel exits\n"); // <= 32 cols: no wrap
   } else {

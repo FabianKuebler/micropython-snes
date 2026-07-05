@@ -26,6 +26,9 @@ void pyexec_str(const char *src, size_t len, mp_parse_input_kind_t kind);
 // pad_eof: honor a joypad ^D (oskb Select) as exit too. Pass 0 when there
 // is nothing to return to (mpyrepl) — Select is then ignored and only a
 // scripted stdin ^D ends the loop; the banner drops the exit hint.
-void pyexec_repl(int pad_eof);
+// preload: optional bytes typed into the line editor at startup (a boot
+// demo left pending at the prompt — end it mid-block so it waits for the
+// user's newline). Skipped when scripted stdin is already queued.
+void pyexec_repl(int pad_eof, const char *preload);
 
 #endif
